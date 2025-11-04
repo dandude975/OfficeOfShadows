@@ -56,12 +56,12 @@
 
                     <StackPanel Style="{StaticResource BulletRow}">
                         <Ellipse Width="7" Height="7" Fill="#90FFB3" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <TextBlock Foreground="#C0C0C0" Text="Creates a secure folder on your Desktop (named 'Liam’s Info')."/>
+                        <TextBlock Foreground="#C0C0C0" Text="Creates a secure folder on your Desktop in which all important files are stored."/>
                     </StackPanel>
 
                     <StackPanel Style="{StaticResource BulletRow}">
                         <Ellipse Width="7" Height="7" Fill="#90FFB3" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <TextBlock Foreground="#C0C0C0" Text="Includes tools such as Terminal, VPN, and Email clients."/>
+                        <TextBlock Foreground="#C0C0C0" Text="Includes tools such as Terminal, VPN, and Email."/>
                     </StackPanel>
 
                     <StackPanel Style="{StaticResource BulletRow}">
@@ -86,7 +86,7 @@
 
                 <!-- Start Button -->
                 <Button x:Name="StartButton"
-                        Content="INITIATE SEQUENCE"
+                        Content="START GAME!"
                         Width="220"
                         Height="52"
                         FontSize="15"
