@@ -20,7 +20,7 @@ namespace OOS.Game
         public void Start()
         {
             // Schedule some example events (replace with your own / JSON-driven)
-            _events.Add(() => DropFile("we_are_watching.txt", "we are watching you.\n- unknown"));
+            _events.Add(() => DropFile("we_are_watching.txt", "we are watching you."));
             _events.Add(() => ShowMessage("Incoming message", "Check the folder..."));
             _events.Add(() => ShowTerminalPopup());
 

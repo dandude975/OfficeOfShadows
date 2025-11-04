@@ -5,7 +5,7 @@ namespace OOS.Game
 {
     public static class SandboxHelper
     {
-        public static string SandboxFolderName => "Liam's Info";
+        public static string SandboxFolderName => "Office Work Stuff";
 
         public static string EnsureSandboxFolder()
         {
@@ -15,7 +15,9 @@ namespace OOS.Game
 
             var readme = Path.Combine(path, "README.txt");
             if (!File.Exists(readme))
-                File.WriteAllText(readme, "Open the shortcuts to begin.\nAll files here are safe to delete.");
+                File.WriteAllText(readme, "\n\nAs you saw from the video, shit's getting real, " +
+                    "you gotta help me out!" +
+                    "\nI think they're watching me.");
 
             return path;
         }
