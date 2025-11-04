@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 
@@ -8,41 +9,61 @@ namespace OOS.Game
     {
         private TaskCompletionSource<bool>? _tcs;
 
-        // Desired size bounds (tweak to taste)
-        private const double MIN_W = 880;  // a touch bigger than the intro
+        // Size bounds (tweak to taste)
+        private const double MIN_W = 880;   // slightly larger than intro
         private const double MIN_H = 540;
-        private const double MAX_W = 1100; // cap so huge videos don't go full screen
+        private const double MAX_W = 1100;  // cap so huge videos don't fill the screen
         private const double MAX_H = 700;
 
-        public VideoWindow(string absolutePath)
+        public VideoWindow(string path, double? left = null, double? top = null)
         {
             InitializeComponent();
 
-            video.Source = new Uri(absolutePath, UriKind.Absolute);
+            // — Position to match the intro (safe fallback to centering) —
+            if (left.HasValue && top.HasValue &&
+                !double.IsNaN(left.Value) && !double.IsInfinity(left.Value) &&
+                !double.IsNaN(top.Value) && !double.IsInfinity(top.Value))
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Left = left.Value;
+                Top = top.Value;
+            }
+            else
+            {
+                WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            }
 
+            // — Resolve path (accept relative or absolute) —
+            string full = Path.IsPathRooted(path)
+                ? path
+                : Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, path));
+
+            video.Source = new Uri(full, UriKind.Absolute);
+
+            // — Sizing once media is ready —
             video.MediaOpened += (s, e) =>
             {
-                // Natural size of the media
                 int natW = video.NaturalVideoWidth;
                 int natH = video.NaturalVideoHeight;
 
                 if (natW > 0 && natH > 0)
                 {
-                    // scale uniformly within our caps
-                    double scaleW = MAX_W / natW;
-                    double scaleH = MAX_H / natH;
-                    double scale = Math.Min(Math.Min(scaleW, scaleH), 1.0); // never upscale above natural size unless below mins
+                    // Scale uniformly to fit within MAX bounds (no cropping), then enforce MIN bounds
+                    double kW = MAX_W / natW;
+                    double kH = MAX_H / natH;
+                    double k = Math.Min(Math.Min(kW, kH), 1.0); // don't upscale above MAX
 
-                    double targetW = natW * scale;
-                    double targetH = natH * scale;
+                    double targetW = Math.Max(natW * k, MIN_W);
+                    double targetH = Math.Max(natH * k, MIN_H);
 
-                    // ensure minimum window size for consistent look
-                    targetW = Math.Max(targetW, MIN_W);
-                    targetH = Math.Max(targetH, MIN_H);
-
-                    // We size the MediaElement; window (SizeToContent) will wrap it
                     video.Width = targetW;
                     video.Height = targetH;
+                }
+                else
+                {
+                    // If unknown, use a sensible default
+                    video.Width = MIN_W;
+                    video.Height = MIN_H;
                 }
             };
 
@@ -50,7 +71,7 @@ namespace OOS.Game
             video.MediaFailed += (s, e) =>
             {
                 MessageBox.Show(
-                    $"Failed to play video:\n{absolutePath}\n\n{e.ErrorException?.Message}",
+                    $"Failed to play video:\n{full}\n\n{e.ErrorException?.Message}",
                     "Office of Shadows");
                 _tcs?.TrySetResult(true);
             };
@@ -62,6 +83,12 @@ namespace OOS.Game
             Show();
             video.Play();
             return _tcs.Task.ContinueWith(_ => Dispatcher.Invoke(Close));
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            try { video.Stop(); } catch { /* ignore */ }
+            base.OnClosed(e);
         }
     }
 }

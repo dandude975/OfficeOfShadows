@@ -6,6 +6,10 @@ namespace OOS.Game
     {
         public bool UserConsented { get; private set; }
 
+        // Expose where this window was located when the user clicked Start
+        public double SavedLeft { get; private set; }
+        public double SavedTop { get; private set; }
+
         public IntroWindow()
         {
             InitializeComponent();
@@ -15,6 +19,10 @@ namespace OOS.Game
         {
             if (AcknowledgeCheck.IsChecked == true)
             {
+                // capture current position BEFORE closing
+                SavedLeft = this.Left;
+                SavedTop = this.Top;
+
                 UserConsented = true;
                 Close();
             }

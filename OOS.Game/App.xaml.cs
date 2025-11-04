@@ -1,23 +1,18 @@
 ﻿using System;
-using System.Threading.Tasks;
+using System.IO;
 using System.Windows;
 
 namespace OOS.Game
 {
     public partial class App : Application
     {
-        private BackgroundManager? _bg;
-
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-
-            // Prevent app from auto-shutting down when last Window closes
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-            // Show disclaimers / consent
             var intro = new IntroWindow();
-            intro.ShowDialog(); // modal - blocks until user accepts/starts
+            intro.ShowDialog();
 
             if (!intro.UserConsented)
             {
@@ -25,32 +20,36 @@ namespace OOS.Game
                 return;
             }
 
-            // Play the “ex-coworker” video (modal). Wait for it to finish.
-            var videoWin = new VideoWindow("Assets/excoworker_clip.mp4");
-            await videoWin.PlayAsync();
+            // Compute a safe position: prefer Intro’s saved position; otherwise center on work area
+            (double left, double top) PosOrCenter(double w, double h)
+            {
+                bool finiteL = !double.IsNaN(intro.SavedLeft) && !double.IsInfinity(intro.SavedLeft);
+                bool finiteT = !double.IsNaN(intro.SavedTop) && !double.IsInfinity(intro.SavedTop);
 
-            // Setup sandbox and shortcuts then open the folder in Explorer
+                if (finiteL && finiteT)
+                    return (intro.SavedLeft, intro.SavedTop);
+
+                var wa = SystemParameters.WorkArea;
+                var cx = wa.Left + (wa.Width - w) / 2.0;
+                var cy = wa.Top + (wa.Height - h) / 2.0;
+                return (cx, cy);
+            }
+
+            var clipPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "excoworker_clip.mp4");
+            if (File.Exists(clipPath))
+            {
+                // Use the intro-sized window as a baseline (tweak these to taste)
+                var (left, top) = PosOrCenter(900, 560);
+                var video = new VideoWindow(clipPath, left, top);
+                await video.PlayAsync();
+            }
+
             var sandboxPath = SandboxHelper.EnsureSandboxFolder();
-            ShortcutHelper.CreateShortcutsIfMissing(sandboxPath /*, list of exe names */);
+            ShortcutHelper.CreateShortcutsIfMissing(sandboxPath);
             System.Diagnostics.Process.Start("explorer.exe", sandboxPath);
 
-            // Start background manager (keeps running even if no windows open)
-            _bg = BackgroundManager.Instance;
-            _bg.Start();
-
-            // Hide/close the intro/video windows (they are already closed) 
-            // Optionally show tray icon so player can access Reset/Quit
+            BackgroundManager.Instance.Start();
             TrayIconManager.CreateTrayIcon();
-
-            // Keep application alive (no visible main window)
-            // Application will be stopped explicitly via Reset/Quit in tray
-        }
-
-        protected override void OnExit(ExitEventArgs e)
-        {
-            _bg?.Stop();
-            TrayIconManager.DisposeTrayIcon();
-            base.OnExit(e);
         }
     }
 }
