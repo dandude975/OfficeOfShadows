@@ -23,6 +23,15 @@
                 </DockPanel>
             </Border>
 
+            <!-- Version text (top-left corner) -->
+            <TextBlock Text="Game version: Pre-Release 1.0.0"
+                       Foreground="#555555"
+                       FontSize="11"
+                       FontFamily="Consolas"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Top"
+                       Margin="14,48,0,0"/>
+
             <!-- Main body -->
             <StackPanel Margin="60,70,60,40" VerticalAlignment="Center" HorizontalAlignment="Center">
                 <!-- Title -->
@@ -127,6 +136,15 @@
                         </Style>
                     </Button.Style>
                 </Button>
+
+                <!-- Footer branding -->
+                <TextBlock Text="RETIS Software (c) 2025"
+                           Foreground="#555555"
+                           FontSize="12"
+                           FontFamily="Consolas"
+                           TextAlignment="Center"
+                           HorizontalAlignment="Center"
+                           Margin="0,18,0,0"/>
             </StackPanel>
         </Grid>
     </Border>
