@@ -1,53 +1,29 @@
 ﻿<Window x:Class="OOS.Game.ResumeWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Office of Shadows" Height="420" Width="720"
-        WindowStartupLocation="CenterScreen"
-        Background="#15171B" Foreground="#E6E6E6"
-        ResizeMode="NoResize" WindowStyle="SingleBorderWindow">
+        Title="OFFICE OF SHADOWS" Width="860" Height="540"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
+        Background="#131518">
     <Grid Margin="24">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <TextBlock Text="RESUME GAME"
-                   FontSize="26" FontWeight="Bold"
-                   Foreground="#9BE564"
-                   Margin="0,0,0,8"/>
+        <TextBlock Text="Resume Game" Foreground="#CFE3D4" FontSize="32" FontWeight="Bold"/>
 
-        <!-- Save summary -->
-        <TextBlock x:Name="lblSaveInfo"
-                   Grid.Row="1"
-                   Text="Looking for save..."
-                   FontSize="14"
-                   Opacity="0.9"
-                   Margin="0,4,0,18"/>
-
-        <!-- Buttons -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" >
-            <Button x:Name="ContinueBtn"
-                    Content="CONTINUE"
-                    Width="160" Height="44" Margin="0,0,16,0"
-                    Background="#2A2F36" Foreground="#E6E6E6"
-                    BorderBrush="#3A3F46"
-                    Click="ContinueBtn_Click"/>
-            <Button x:Name="NewGameBtn"
-                    Content="NEW GAME"
-                    Width="160" Height="44"
-                    Background="#9BE564" Foreground="#0E1116"
-                    BorderBrush="#9BE564"
-                    Click="NewGameBtn_Click"/>
+        <StackPanel Grid.Row="1" Margin="0,24,0,0" VerticalAlignment="Top" >
+            <TextBlock x:Name="lblSaveInfo" Foreground="#9aa3ab" FontSize="16" />
+            <StackPanel Orientation="Horizontal" Margin="0,24,0,0" HorizontalAlignment="Center" >
+                <Button x:Name="ContinueButton" Width="200" Height="44" Margin="8" Content="CONTINUE"
+                        Click="ContinueButton_Click"/>
+                <Button x:Name="NewGameButton" Width="200" Height="44" Margin="8" Content="NEW GAME"
+                        Click="NewGameButton_Click"/>
+            </StackPanel>
         </StackPanel>
 
-        <!-- Footer -->
-        <TextBlock Grid.Row="3"
-                   Text="RETIS Software (c) 2025 • Pre-Release 1.1.0"
-                   HorizontalAlignment="Center"
-                   Opacity="0.6"
-                   Margin="0,20,0,0" />
+        <TextBlock Grid.Row="2" HorizontalAlignment="Center" Margin="0,18,0,0"
+                   Foreground="#666" Text="RETIS Software (c) 2025 — Pre-Release 1.1.7" />
     </Grid>
 </Window>

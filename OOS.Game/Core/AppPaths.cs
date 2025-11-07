@@ -1,39 +1,38 @@
 ﻿using System;
-using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 namespace OOS.Game
 {
-    /// <summary>Central place for all game paths.</summary>
     internal static class AppPaths
     {
-        public static string ExecutablePath =>
-            Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? AppContext.BaseDirectory;
-
-        public static string BaseDir => Path.GetDirectoryName(ExecutablePath)!;
+        // Base folders
+        public static string BaseDir { get; } = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
 
         public static string AssetsDir => Path.Combine(BaseDir, "Assets");
-        public static string VideosDir => Path.Combine(AssetsDir, "Videos");
-        public static string ManifestPath => Path.Combine(AssetsDir, "manifest.json");
+        public static string SavesDir => Path.Combine(BaseDir, "Saves");
+        public static string ReportsDir => Path.Combine(BaseDir, "FileValidation");
+        public static string VideosDir => AssetsDir; // keep videos in Assets for now
 
-        // Player-facing sandbox on Desktop
+        // Sandbox - the player workspace on Desktop
         public static string SandboxRoot =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Office Work Stuff");
 
-        // Game-internal save + integrity locations (inside the game bin dir)
-        public static string SaveDir => Path.Combine(BaseDir, "Saves");
-        public static string IntegrityDir => Path.Combine(BaseDir, "FileValidation");
+        // Common executables we link to
+        public static string TerminalExe => Path.Combine(BaseDir, "..", "..", "..", "OOS.Terminal", "bin", "Debug", "net8.0-windows", "OOS.Terminal.exe");
+        public static string DeviceManagerExe => Path.Combine(BaseDir, "..", "..", "..", "OOS.DeviceManager", "bin", "Debug", "net8.0-windows", "OOS.DeviceManager.exe");
 
-        public static string GetAssetPath(string relative) => Path.Combine(AssetsDir, relative);
-
+        // Helpers
         public static void EnsureAllDirectories()
         {
+            Directory.CreateDirectory(SavesDir);
+            Directory.CreateDirectory(ReportsDir);
             Directory.CreateDirectory(SandboxRoot);
-            Directory.CreateDirectory(SaveDir);
-            Directory.CreateDirectory(IntegrityDir);
-
-            // the one sandbox subfolder we want to create up-front
-            Directory.CreateDirectory(Path.Combine(SandboxRoot, "Notes"));
         }
+
+        public static string VideoPath(string fileName) => Path.Combine(VideosDir, fileName);
+        public static string SavePath(string fileName) => Path.Combine(SavesDir, fileName);
+        public static string ReportPath(string fileName) => Path.Combine(ReportsDir, fileName);
+        public static string SandboxPath(params string[] more) => Path.Combine(new[] { SandboxRoot }.Concat(more).ToArray());
     }
 }

@@ -1,130 +1,62 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Threading.Tasks;
-using System.Windows;
-using Forms = System.Windows.Forms;
+using System.Timers;
 using OOS.Shared;
 
 namespace OOS.Game
 {
-    internal sealed class BackgroundManager
+    public sealed class BackgroundManager
     {
         private static readonly Lazy<BackgroundManager> _lazy = new(() => new BackgroundManager());
         public static BackgroundManager Instance => _lazy.Value;
 
-        private Forms.NotifyIcon? _tray;
-        private bool _running;
+        private Timer? _timer;
 
         private BackgroundManager() { }
 
         public void Start()
         {
-            if (_running) return;
-            _running = true;
-            CreateTrayIcon();
-            SharedLogger.Info("BackgroundManager started.");
+            if (_timer != null) return;
+            _timer = new Timer(30000); // every 30s, placeholder for future events
+            _timer.Elapsed += (_, __) => { /* future: popups, hints, etc. */ };
+            _timer.AutoReset = true;
+            _timer.Start();
         }
 
         public void Stop()
         {
-            if (!_running) return;
-            try { _tray?.Dispose(); } catch { }
-            _tray = null;
-            _running = false;
-            SharedLogger.Info("BackgroundManager stopped.");
+            _timer?.Stop();
+            _timer?.Dispose();
+            _timer = null;
         }
 
-        private void CreateTrayIcon()
-        {
-            _tray = new Forms.NotifyIcon
-            {
-                Icon = System.Drawing.SystemIcons.Application,
-                Visible = true,
-                Text = "Office of Shadows (running)"
-            };
-
-            var menu = new Forms.ContextMenuStrip();
-
-            menu.Items.Add(new Forms.ToolStripMenuItem("Open Workspace", null, (_, __) => OpenFolder(AppPaths.SandboxRoot)));
-            menu.Items.Add(new Forms.ToolStripMenuItem("Validate / Repair Files", null, async (_, __) => await RunIntegrityAsync()));
-            menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add(new Forms.ToolStripMenuItem("Open Terminal", null, (_, __) => LaunchTool("OOS.Terminal.exe")));
-            menu.Items.Add(new Forms.ToolStripMenuItem("Open Device Manager", null, (_, __) => LaunchTool("OOS.DeviceManager.exe")));
-            menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add(new Forms.ToolStripMenuItem("Quit", null, (_, __) => Application.Current.Shutdown()));
-
-            _tray.ContextMenuStrip = menu;
-            _tray.DoubleClick += (_, __) => OpenFolder(AppPaths.SandboxRoot);
-        }
-
-        private static void OpenFolder(string path)
+        /// <summary>
+        /// Launch a tool by exe name (relative to game BaseDir) or by absolute path.
+        /// </summary>
+        public static void LaunchTool(string exeOrPath)
         {
             try
             {
-                if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-                Process.Start(new ProcessStartInfo("explorer.exe")
+                string path = exeOrPath;
+                if (!Path.IsPathRooted(path))
+                    path = Path.Combine(AppPaths.BaseDir, exeOrPath);
+
+                if (!File.Exists(path))
                 {
-                    UseShellExecute = true,
-                    Arguments = $"\"{path}\""
-                });
-            }
-            catch (Exception ex)
-            {
-                SharedLogger.Warn($"OpenFolder failed: {ex.Message}");
-            }
-        }
-
-        /// <summary>Public so existing callers (e.g., ToolDeployer/TrayIconManager) can use it.</summary>
-        public static void LaunchTool(string exeName)
-        {
-            try
-            {
-                // packaged: next to game exe
-                var nearGame = Path.Combine(AppPaths.BaseDir, exeName);
-
-                // dev fallback: sibling project's debug output
-                var sibling = Path.GetFullPath(Path.Combine(
-                    AppPaths.BaseDir, "..", "..", "..",
-                    Path.GetFileNameWithoutExtension(exeName)!, "bin", "Debug", "net8.0-windows", exeName));
-
-                var target = File.Exists(nearGame) ? nearGame :
-                             File.Exists(sibling) ? sibling : null;
-
-                if (target == null)
-                {
-                    SharedLogger.Warn($"Tool not found: {exeName}");
+                    SharedLogger.Warn($"Tool not found: {path}");
                     return;
                 }
 
-                Process.Start(new ProcessStartInfo(target)
+                Process.Start(new ProcessStartInfo
                 {
-                    UseShellExecute = true,
-                    WorkingDirectory = Path.GetDirectoryName(target)!
+                    FileName = path,
+                    UseShellExecute = true
                 });
             }
             catch (Exception ex)
             {
-                SharedLogger.Warn($"LaunchTool({exeName}) failed: {ex.Message}");
-            }
-        }
-
-        public async Task RunIntegrityAsync()
-        {
-            try
-            {
-                Directory.CreateDirectory(AppPaths.IntegrityDir);
-                var report = IntegrityManager.ValidateAndRepair(
-                    AppPaths.ManifestPath,
-                    AppPaths.SandboxRoot,
-                    AppPaths.IntegrityDir);
-
-                SharedLogger.Info($"Integrity check complete. Report: {report}");
-                await Task.CompletedTask;
-            }
-            catch (Exception ex)
-            {
-                SharedLogger.Error($"Integrity run failed: {ex.Message}");
+                SharedLogger.Warn($"Failed to launch tool '{exeOrPath}': {ex.Message}");
             }
         }
     }

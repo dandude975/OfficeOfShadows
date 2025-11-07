@@ -2,15 +2,18 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Message from Liam"
-        Height="620"
-        Width="980"
+        Width="980" Height="620"
+        ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
-        Background="#111216"
-        Foreground="#E5E7EB">
-    <Grid>
-        <MediaElement x:Name="mediaElement"
+        Background="#1A1C20"
+        AllowsTransparency="False"
+        WindowStyle="SingleBorderWindow">
+    <Grid Margin="8">
+        <MediaElement x:Name="media"
                       LoadedBehavior="Manual"
                       UnloadedBehavior="Stop"
-                      Stretch="Uniform"/>
+                      Stretch="Uniform"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch" />
     </Grid>
 </Window>

@@ -7,45 +7,38 @@ namespace OOS.Game
 {
     public partial class ResumeWindow : Window
     {
-        private readonly string _savePath;
+        public bool ContinueChosen { get; private set; }
+        public bool NewGameChosen { get; private set; }
+
+        private readonly string _savePath = AppPaths.SavePath("save.json");
 
         public ResumeWindow()
         {
             InitializeComponent();
-            _savePath = Path.Combine(AppPaths.SaveDir, "save.json");
 
-            if (File.Exists(_savePath))
+            var save = GameSave.TryLoad(_savePath);
+            if (save == null)
             {
-                var save = GameSave.Load(_savePath);
-                lblSaveInfo.Text = $"{save.Checkpoint} — {save.TimestampUtc.ToLocalTime():g}";
-
-
+                lblSaveInfo.Text = "No previous save found.";
+                ContinueButton.IsEnabled = false;
             }
             else
             {
-                lblSaveInfo.Text = "No save found.";
+                lblSaveInfo.Text = $"{save.Checkpoint} — {save.TimestampUtc.ToLocalTime():g}";
             }
         }
 
-        private void ContinueBtn_Click(object sender, RoutedEventArgs e)
+        private void ContinueButton_Click(object sender, RoutedEventArgs e)
         {
-            // Play the resume clip (or jump right into desktop if you prefer)
-            var video = new VideoWindow("resume.mp4");
-            video.ShowDialog();
+            ContinueChosen = true;
+            DialogResult = true;
             Close();
         }
 
-        private void NewGameBtn_Click(object sender, RoutedEventArgs e)
+        private void NewGameButton_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                if (File.Exists(_savePath))
-                    File.Delete(_savePath);
-            }
-            catch { /* ignore */ }
-
-            var video = new VideoWindow("intro.mp4");
-            video.ShowDialog();
+            NewGameChosen = true;
+            DialogResult = true;
             Close();
         }
     }
