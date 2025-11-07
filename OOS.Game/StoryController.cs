@@ -1,32 +1,49 @@
-﻿using OOS.Shared;
+﻿using System;
+using OOS.Shared;
 
 namespace OOS.Game
 {
-    public class StoryController
+    internal class StoryController
     {
-        public Progress Progress { get; private set; } = Progress.Load();
+        private ProgressState _state;
+        private readonly string _baseDir;
 
-        public void SetCheckpoint(string id)
+        public StoryController()
         {
-            if (Progress.Checkpoint != id)
-            {
-                Progress.Checkpoint = id;
-                Progress.Save();
-            }
+            _baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            _state = Progress.Load(_baseDir);
         }
 
-        public bool AtLeast(string id) => Progress.IsAtOrBeyond(id);
+        public ProgressState State => _state;
 
-        public void Flag(string key, bool value = true)
+        public bool AtLeast(string checkpoint) =>
+            string.Compare(_state.Checkpoint, checkpoint, StringComparison.Ordinal) >= 0;
+
+        public bool Flag(string name) => _state.Flags.Contains(name);
+
+        public void SetFlag(string name)
         {
-            Progress.Flags[key] = value;
-            Progress.Save();
+            if (_state.Flags.Add(name))
+                Progress.Save(_baseDir, _state);
+        }
+
+        public void SetCheckpoint(string checkpoint)
+        {
+            if (!AtLeast(checkpoint))
+            {
+                _state.Checkpoint = checkpoint;
+                Progress.Save(_baseDir, _state);
+            }
         }
 
         public void ResetProgress()
         {
-            Progress.Reset();
-            Progress = Progress.Load(); // back to "intro"
+            _state = new ProgressState();
+            Progress.Save(_baseDir, _state);
         }
+
+        // Stubs (only if you still call these somewhere):
+        public string Result(string key) => "";
+        public string Choice(string key) => "";
     }
 }

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "fake-router-1",
+    "type": "router",
+    "name": "Office-Router",
+    "manufacturer": "AcmeNet",
+    "isNetwork": true,
+    "ip": "192.168.0.1",
+    "mac": "00:11:22:33:44:55",
+    "notes": "Main office router — vulnerable admin UI on port 8080",
+    "metadata": {
+      "public_ip": "83.45.127.200",
+      "firmware": "AcmeOS 3.2.1"
+    },
+    "isFake": true
+  },
+  {
+    "id": "fake-office-server",
+    "type": "network-device",
+    "name": "office-filesrv-01",
+    "manufacturer": "OfficeInc",
+    "isNetwork": true,
+    "ip": "10.10.10.7",
+    "mac": "AA:BB:CC:DD:EE:FF",
+    "notes": "Direct connection to office servers — flagged by Liam.",
+    "metadata": {
+      "open_ports": "22,445",
+      "os": "Windows Server 2019"
+    },
+    "isFake": true
+  }
+]

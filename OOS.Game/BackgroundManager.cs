@@ -71,18 +71,48 @@ namespace OOS.Game
             MessageBox.Show(body, title);
         }
 
+        private static bool LaunchTool(string exeName, params string[] args)
+        {
+            try
+            {
+                var path = System.IO.Path.Combine(App.BaseDir, exeName);
+                if (!System.IO.File.Exists(path))
+                {
+                    OOS.Shared.SharedLogger.Warn($"Tool not found: {exeName} (looked in {App.BaseDir})");
+                    return false;
+                }
+
+                var psi = new System.Diagnostics.ProcessStartInfo(path)
+                {
+                    UseShellExecute = true,
+                    WorkingDirectory = App.BaseDir
+                };
+
+                // For .NET 8 you can use ArgumentList; with UseShellExecute=true, Args still work.
+                if (args is { Length: > 0 })
+                    psi.Arguments = string.Join(" ", args);
+
+                System.Diagnostics.Process.Start(psi);
+                OOS.Shared.SharedLogger.Info($"Launched tool: {path}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                OOS.Shared.SharedLogger.Warn($"Failed to launch tool '{exeName}': {ex.Message}");
+                return false;
+            }
+        }
+
+
+
         private void ShowTerminalPopup()
         {
             try
             {
-                var win = new OOS.Terminal.CommandWindow();
-                win.Topmost = true;
-                win.Show();
+                _ = LaunchTool("OOS.Terminal.exe"); // ignore return, or handle if you want
             }
-            catch
-            {
-                // If Terminal project isn't available, skip
-            }
+            catch { /* no-op; we already log inside LaunchTool */ }
         }
+
     }
 }

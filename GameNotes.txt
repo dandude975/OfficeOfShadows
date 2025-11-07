@@ -1,0 +1,17 @@
+Puzzle ideas:
+- Collecting hexadecimal codes to obtain a location
+- Look through old messages
+- Decrypt Hard drives
+- Launch DoS attacks to antagonist's ip to slow their progress
+- Decoding email headers to access antagonist's identification
+- Fend off/block companies attempts to access players PC
+- Find hidden files located in company servers
+- Tracking antagonists ip to a physical location - physical location needed to launch DoS attacks
+- Scan files that have been sent to us before checking them - consequences for not.
+
+
+Game ideas:
+- IF the antagonist "wins" game shows a fake blue screen of death (full screen across all player's monitors) then shuts down the PC,
+  and forces the player to resume from latest checkpoint if they reopen the game.
+- Player wins by submitting a report to the press with overwhelming evidence (10 pieces) all in the format of files. Epilogue video plays.
+- Communication between the player and an NPC helper, include needing to encrypt data and consequences if forget

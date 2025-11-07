@@ -1,17 +1,33 @@
-﻿using System;
+﻿// OOS.Shared/GameMessage.cs
+using System;
 using System.Text.Json;
 
 namespace OOS.Shared
 {
-    public class GameMessage
+    public record GameMessage
     {
-        public string Type { get; set; } = "";   // e.g. "terminal.command", "email.read"
-        public string From { get; set; } = "";   // "Terminal", "Email", "Game"
-        public object? Data { get; set; }        // any payload
-        public DateTime Ts { get; set; } = DateTime.UtcNow;
+        public string Type { get; init; } = "";      // e.g., "device.mark_suspicious"
+        public string From { get; init; } = "";      // e.g., "DeviceManager"
+        public object? Data { get; init; }           // anonymous payload or small DTO
+        public DateTime Utc { get; init; } = DateTime.UtcNow;
 
-        public override string ToString() => JsonSerializer.Serialize(this);
-        public static GameMessage FromJson(string json) =>
-            JsonSerializer.Deserialize<GameMessage>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        public static GameMessage FromJson(string json)
+        {
+            var opts = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            return JsonSerializer.Deserialize<GameMessage>(json, opts)
+                   ?? new GameMessage { Type = "invalid", From = "deserialize" };
+        }
+
+        public string ToJson()
+        {
+            var opts = new JsonSerializerOptions
+            {
+                WriteIndented = false
+            };
+            return JsonSerializer.Serialize(this, opts);
+        }
     }
 }

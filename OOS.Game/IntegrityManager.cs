@@ -1,227 +1,151 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
+using System.Collections.Generic;
 using OOS.Shared;
 
 namespace OOS.Game
 {
-    internal static class IntegrityManager
+    public static class IntegrityManager
     {
-        public sealed class Result
+        public static string ValidateAndRepair(string manifestPath, string sandboxRoot)
         {
-            public string ReportPath { get; init; } = "";
-            public int IssueCount { get; init; }          // -1 = no manifest, -2 = crash
-            public bool ManifestFound { get; init; }
-        }
-
-        /// <summary>
-        /// Validate sandbox against manifest; auto-repair where possible; write a human-readable report.
-        /// Returns the report path and issue count.
-        /// </summary>
-        public static Result RunStartupCheck(string manifestPath, string sandboxRoot)
-        {
-            var report = new List<string>
-            {
-                "Office of Shadows – Integrity Check",
-                $"Manifest: {manifestPath}",
-                $"Sandbox : {sandboxRoot}",
-                $"Date    : {DateTime.Now}",
-                ""
-            };
-
             try
             {
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string reportPath = Path.Combine(sandboxRoot, $"integrity_{timestamp}.txt");
+
+                using var writer = new StreamWriter(reportPath, false);
+                writer.WriteLine("Office of Shadows – Integrity Check");
+                writer.WriteLine($"Manifest : {manifestPath}");
+                writer.WriteLine($"Sandbox  : {sandboxRoot}");
+                writer.WriteLine($"Date     : {DateTime.Now}\n");
+
                 if (!File.Exists(manifestPath))
                 {
-                    report.Add("ERROR: Manifest not found. Skipping validation.");
-                    var missPath = WriteReport(sandboxRoot, report);
-                    Debug.WriteLine($"Integrity: no manifest; report at {missPath}");
-                    return new Result { ReportPath = missPath, IssueCount = -1, ManifestFound = false };
+                    writer.WriteLine("FATAL: Manifest file not found!");
+                    SharedLogger.Warn($"Manifest file missing: {manifestPath}");
+                    return reportPath;
                 }
 
-                var manifest = SandboxManifest.Load(manifestPath);
-                var issues = new List<Discrepancy>(manifest.Validate(sandboxRoot));
-
-                if (issues.Count == 0)
+                SandboxManifest manifest;
+                try
                 {
-                    report.Add("All items match the manifest.");
-                    var okPath = WriteReport(sandboxRoot, report);
-                    Debug.WriteLine($"Integrity: ok; report at {okPath}");
-                    return new Result { ReportPath = okPath, IssueCount = 0, ManifestFound = true };
+                    string json = File.ReadAllText(manifestPath);
+                    manifest = JsonSerializer.Deserialize<SandboxManifest>(json);
+                }
+                catch (Exception ex)
+                {
+                    writer.WriteLine($"FATAL: The JSON value could not be converted.\nError: {ex.Message}");
+                    SharedLogger.Warn($"Invalid manifest JSON: {ex.Message}");
+                    return reportPath;
                 }
 
-                report.Add($"Found {issues.Count} issue(s). Attempting auto-repair where possible…");
-                report.Add("");
+                var discrepancies = manifest.Validate(sandboxRoot);
 
-                foreach (var d in issues)
+                if (discrepancies.Count == 0)
                 {
-                    report.Add($"- {d.Kind}: {d.Item.Path} ({d.Details})");
+                    writer.WriteLine("All files verified successfully. No issues found.");
+                }
+                else
+                {
+                    writer.WriteLine($"Found {discrepancies.Count} issue(s). Attempting auto-repair where possible…\n");
 
-                    try
+                    foreach (var item in discrepancies)
                     {
-                        switch (d.Item.Kind)
-                        {
-                            case ItemKind.Directory:
-                                EnsureDirectory(d.FullPath, report);
-                                break;
+                        writer.WriteLine($"- Missing: {item.Name}");
+                        bool repaired = TryRepair(item, sandboxRoot, writer);
 
-                            case ItemKind.Shortcut:
-                                RepairShortcut(d, sandboxRoot, report);
-                                break;
-
-                            case ItemKind.File:
-                                RepairFile(d, report);
-                                break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        report.Add($"  Repair failed: {ex.Message}");
+                        writer.WriteLine(repaired
+                            ? "  Successfully repaired.\n"
+                            : "  Could not repair: Target EXE not found.\n");
                     }
                 }
 
-                var written = WriteReport(sandboxRoot, report);
-                Debug.WriteLine($"Integrity: repaired {issues.Count}; report at {written}");
-                return new Result { ReportPath = written, IssueCount = issues.Count, ManifestFound = true };
+                writer.Flush();
+                SharedLogger.Info($"Integrity check completed. Report: {reportPath}");
+                return reportPath;
             }
             catch (Exception ex)
             {
-                report.Add("");
-                report.Add($"FATAL: {ex.Message}");
-                var written = WriteReport(sandboxRoot, report);
-                Debug.WriteLine($"Integrity: crash; report at {written}");
-                return new Result { ReportPath = written, IssueCount = -2, ManifestFound = false };
+                SharedLogger.Warn($"Integrity check failed: {ex.Message}");
+                return null;
             }
         }
 
-        // ---------- Repairs ----------
-
-        private static void EnsureDirectory(string path, List<string> report)
+        private static bool TryRepair(ManifestItem item, string sandboxRoot, StreamWriter writer)
         {
-            if (!Directory.Exists(path))
-            {
-                Directory.CreateDirectory(path);
-                report.Add("  Repaired: Created directory.");
-            }
-        }
-
-        private static void RepairShortcut(Discrepancy d, string sandboxRoot, List<string> report)
-        {
-            // Try a specific shortcut recreation; if not available, recreate all known shortcuts.
-            var appName = AppNameFromShortcut(d.Item.Path);
-            var ok = false;
-
             try
             {
-                ok = ShortcutHelper.CreateShortcutForApp(
-                        sandboxRoot,
-                        d.Item.Path,                // e.g., "Terminal.lnk"
-                        appName,                    // e.g., "OOS.Terminal"
-                        "Office of Shadows tool");
-            }
-            catch
-            {
-                // ignore and try bulk creation
-            }
+                string targetPath = Path.Combine(sandboxRoot, item.Name);
 
-            if (!ok)
-            {
-                try
+                switch (item.Kind)
                 {
-                    ShortcutHelper.CreateShortcutsIfMissing(sandboxRoot);
-                    // confirm creation
-                    ok = File.Exists(Path.Combine(sandboxRoot, d.Item.Path));
+                    case ItemKind.Directory:
+                        Directory.CreateDirectory(targetPath);
+                        writer.WriteLine("  Repaired: Created directory.");
+                        return true;
+
+                    case ItemKind.Shortcut:
+                        ShortcutHelper.CreateShortcutForApp(
+                            sandboxRoot,
+                            item.Name,
+                            item.TargetExe,
+                            item.Description ?? "In-game shortcut");
+                        writer.WriteLine("  Repaired: Recreated shortcut.");
+                        return true;
+
+                    case ItemKind.File:
+                        File.WriteAllText(targetPath, item.ExpectedContent ?? "");
+                        writer.WriteLine("  Repaired: Recreated placeholder file.");
+                        return true;
+
+                    default:
+                        writer.WriteLine("  Skipped: Unsupported item type.");
+                        return false;
                 }
-                catch { /* ignore */ }
             }
-
-            report.Add(ok
-                ? "  Repaired: Recreated shortcut."
-                : "  Could not repair: Target EXE not found.");
+            catch (Exception ex)
+            {
+                writer.WriteLine($"  Repair failed: {ex.Message}");
+                return false;
+            }
         }
+    }
 
-        private static void RepairFile(Discrepancy d, List<string> report)
+    // Minimal manifest definitions
+    public enum ItemKind { File, Directory, Shortcut }
+
+    public class ManifestItem
+    {
+        public string Name { get; set; }
+        public ItemKind Kind { get; set; }
+        public string TargetExe { get; set; }
+        public string Description { get; set; }
+        public string ExpectedContent { get; set; }
+    }
+
+    public class SandboxManifest
+    {
+        public List<ManifestItem> Items { get; set; } = new();
+
+        public List<ManifestItem> Validate(string sandboxRoot)
         {
-            // If the manifest provides a source asset, copy it safely.
-            if (!string.IsNullOrWhiteSpace(d.Item.Source))
+            var missing = new List<ManifestItem>();
+            foreach (var item in Items)
             {
-                var src = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, d.Item.Source);
-                if (File.Exists(src))
+                string path = Path.Combine(sandboxRoot, item.Name);
+
+                bool exists = item.Kind switch
                 {
-                    SafetyManager.SafeCopy(src, d.FullPath);
-                    report.Add($"  Repaired: Copied from {d.Item.Source}");
-                    return;
-                }
+                    ItemKind.Directory => Directory.Exists(path),
+                    _ => File.Exists(path)
+                };
 
-                report.Add($"  Could not repair: Source not found: {src}");
-                return;
+                if (!exists)
+                    missing.Add(item);
             }
-
-            // Special-case README (regenerate text if missing/corrupt and no source provided).
-            if (string.Equals(Path.GetFileName(d.FullPath), "README.txt", StringComparison.OrdinalIgnoreCase))
-            {
-                SafetyManager.SafeWriteText(d.FullPath, DefaultReadme());
-                report.Add("  Repaired: Regenerated README content.");
-                return;
-            }
-
-            report.Add("  No repair source specified.");
+            return missing;
         }
-
-        // ---------- Helpers ----------
-
-        /// <summary>
-        /// Primary: write to EXE\FileValidation; fallback: sandbox\_integrity_report.txt.
-        /// Returns actual path written.
-        /// </summary>
-        private static string WriteReport(string sandboxRoot, List<string> lines)
-        {
-            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var outDir = Path.Combine(baseDir, "FileValidation");
-            var file = Path.Combine(outDir, $"integrity_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
-
-            try
-            {
-                Directory.CreateDirectory(outDir);
-                File.WriteAllLines(file, lines);
-                return file;
-            }
-            catch
-            {
-                try
-                {
-                    var fallback = Path.Combine(sandboxRoot, "_integrity_report.txt");
-                    File.WriteAllLines(fallback, lines);
-                    return fallback;
-                }
-                catch
-                {
-                    return "";
-                }
-            }
-        }
-
-        private static string AppNameFromShortcut(string linkPath)
-        {
-            var name = Path.GetFileNameWithoutExtension(linkPath).ToLowerInvariant();
-            return name switch
-            {
-                "terminal" => "OOS.Terminal",
-                "vpn" => "OOS.VPN",
-                "email" => "OOS.Email",
-                _ => "OOS.Terminal"
-            };
-        }
-
-        private static string DefaultReadme() =>
-@"OFFICE OF SHADOWS – Liam’s Info
-
-This folder is where your investigation tools, notes, and clues will appear.
-
-If items are missing, the game will attempt to repair them automatically on startup.
-You can reopen the game to rebuild critical files and shortcuts.
-
-– RETIS Software";
     }
 }

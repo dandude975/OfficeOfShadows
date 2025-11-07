@@ -1,56 +1,42 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 
 namespace OOS.Shared
 {
-    public class Progress
+    public class ProgressState
     {
-        public string Checkpoint { get; set; } = "intro";   // "intro" before the video
+        public string Checkpoint { get; set; } = "intro";
         public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
-        public Dictionary<string, bool> Flags { get; set; } = new();
+        public System.Collections.Generic.HashSet<string> Flags { get; set; } = new();
+        public string Version { get; set; } = "Pre-Release 1.1.0";
+    }
 
-        public static string FilePath => SharedPaths.ProgressFile;
+    public static class Progress
+    {
+        private static string PathFor(string baseDir) =>
+            System.IO.Path.Combine(baseDir, "Saves", "save.json");
 
-        public static bool Exists() => File.Exists(FilePath);
 
-        public static Progress Load()
+        public static bool Exists(string baseDir) => File.Exists(PathFor(baseDir));
+
+        public static ProgressState Load(string baseDir)
         {
-            if (!Exists()) return new Progress();
-            try
-            {
-                var json = File.ReadAllText(FilePath);
-                return JsonSerializer.Deserialize<Progress>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new Progress();
-            }
-            catch { return new Progress(); }
+            var p = PathFor(baseDir);
+            if (!File.Exists(p)) return new ProgressState();
+            var json = File.ReadAllText(p);
+            return JsonSerializer.Deserialize<ProgressState>(json) ?? new ProgressState();
         }
 
-        public void Save()
+        public static void Save(string baseDir, ProgressState s)
         {
-            UpdatedUtc = DateTime.UtcNow;
-            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(FilePath, json);
+            s.UpdatedUtc = DateTime.UtcNow;
+            var p = PathFor(baseDir);
+            Directory.CreateDirectory(Path.GetDirectoryName(p)!);
+            File.WriteAllText(p, JsonSerializer.Serialize(s, new JsonSerializerOptions { WriteIndented = true }));
         }
 
-        public static void Reset()
-        {
-            try { if (Exists()) File.Delete(FilePath); } catch { /* ignore */ }
-        }
-
-        public bool IsAtOrBeyond(string checkpoint) => CheckpointOrder.IndexOf(Checkpoint) >= CheckpointOrder.IndexOf(checkpoint);
-
-        public static readonly List<string> CheckpointOrder = new()
-        {
-            "intro",
-            "video_played",
-            "tools_opened",
-            "first_email_read",
-            "vpn_connected",
-            "terminal_scan_done",
-            "report_compiled",
-            "game_complete"
-        };
+        public static bool IsAtOrBeyond(string baseDir, string checkpoint) =>
+            string.Compare(Load(baseDir).Checkpoint, checkpoint, StringComparison.Ordinal) >= 0;
     }
 }

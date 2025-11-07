@@ -1,106 +1,90 @@
 ﻿using System;
 using System.IO;
-using System.Linq;
-
-// If you use COM shortcuts, ensure you have a COM reference:
-// Project > Add Reference > COM > "Windows Script Host Object Model"
-// and: using IWshRuntimeLibrary;
+using IWshRuntimeLibrary;
+using File = System.IO.File;
 
 namespace OOS.Game
 {
     internal static class ShortcutHelper
     {
-        public static void CreateShortcutsIfMissing(string sandboxRoot)
+        public static void CreateShortcutsIfMissing(string sandboxDir)
         {
-            CreateShortcutForApp(sandboxRoot, "Terminal.lnk", "OOS.Terminal", "Office of Shadows - Terminal");
-            CreateShortcutForApp(sandboxRoot, "VPN.lnk", "OOS.VPN", "Office of Shadows - VPN");
-            CreateShortcutForApp(sandboxRoot, "Email.lnk", "OOS.Email", "Office of Shadows - Email");
+            Directory.CreateDirectory(sandboxDir);
+
+            CreateShortcutForApp(sandboxDir, "Terminal.lnk", "OOS.Terminal.exe", "Launch the in-game terminal environment");
+            CreateShortcutForApp(sandboxDir, "DeviceManager.lnk", "OOS.DeviceManager.exe", "Manage connected (real + simulated) devices");
         }
 
-        public static bool CreateShortcutForApp(string folder, string linkName, string exeProjectName, string description)
-        {
-            var target = ResolveExe(exeProjectName);
-            var linkPath = Path.Combine(folder, linkName);
-
-            if (target == null || !File.Exists(target))
-            {
-                // Could log here if you have SharedLogger available in Game
-                return false;
-            }
-
-            Directory.CreateDirectory(folder);
-            CreateLnk(linkPath, target, Path.GetDirectoryName(target)!, description);
-            return File.Exists(linkPath);
-        }
-
-        private static string? ResolveExe(string exeProjectName)
-        {
-            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var exeName = exeProjectName + ".exe";
-
-            // 1) Same folder as the game (publish scenario)
-            var sameDir = Path.Combine(baseDir, exeName);
-            if (File.Exists(sameDir)) return sameDir;
-
-            // 2) Dev: search sibling project bin folders relative to the Game bin folder
-            // Walk up to solution root (heuristic: up to 5 parents)
-            var dir = new DirectoryInfo(baseDir);
-            for (int i = 0; i < 5 && dir?.Parent != null; i++) dir = dir.Parent; // up from ...\OOS.Game\bin\Debug\net8.0-windows
-
-            if (dir != null && dir.Exists)
-            {
-                // Typical path: [solution]\OOS.Terminal\bin\Debug\[tfm]\OOS.Terminal.exe
-                var projectDir = new DirectoryInfo(Path.Combine(dir.FullName, exeProjectName));
-                if (projectDir.Exists)
-                {
-                    var binDir = new DirectoryInfo(Path.Combine(projectDir.FullName, "bin"));
-                    if (binDir.Exists)
-                    {
-                        // Prefer current config (Debug/Release) if we can detect it
-                        var candidates = binDir.EnumerateDirectories("*", SearchOption.AllDirectories)
-                                               .SelectMany(d => d.EnumerateFiles(exeName, SearchOption.TopDirectoryOnly))
-                                               .OrderByDescending(f => f.LastWriteTimeUtc)
-                                               .ToList();
-                        var hit = candidates.FirstOrDefault();
-                        if (hit != null) return hit.FullName;
-                    }
-                }
-            }
-
-            return null;
-        }
-
-        private static void CreateLnk(string shortcutPath, string targetExe, string workingDir, string description)
+        public static void CreateShortcutForApp(string sandboxDir, string shortcutName, string exeName, string description)
         {
             try
             {
-                var shell = new IWshRuntimeLibrary.WshShell();
-                var shortcut = (IWshRuntimeLibrary.IWshShortcut)shell.CreateShortcut(shortcutPath);
-                shortcut.TargetPath = targetExe;
-                shortcut.WorkingDirectory = workingDir;
+                string exePath = Path.Combine(App.BaseDir, exeName);
+                string shortcutPath = Path.Combine(sandboxDir, shortcutName);
+
+                if (!File.Exists(exePath))
+                {
+                    OOS.Shared.SharedLogger.Warn($"Target EXE not found for shortcut: {exePath}");
+                    return;
+                }
+
+                if (File.Exists(shortcutPath)) return;
+
+                var shell = new WshShell();
+                IWshShortcut shortcut = (IWshShortcut)shell.CreateShortcut(shortcutPath);
+                shortcut.TargetPath = exePath;
+                shortcut.WorkingDirectory = Path.GetDirectoryName(exePath);
                 shortcut.Description = description;
-
-                // Use the real Command Prompt icon
-                var systemRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-                var cmdIcon = Path.Combine(systemRoot, "System32", "cmd.exe");
-                shortcut.IconLocation = $"{cmdIcon},0";
-
-                // (Optional) open Terminal in your sandbox folder by default
-                // shortcut.WorkingDirectory = OOS.Shared.SharedPaths.DesktopSandbox;
-
+                shortcut.IconLocation = exePath;
                 shortcut.Save();
-            }
-            catch
-            {
-                // .url fallback kept if you want, but it won't carry a custom icon.
-                if (!shortcutPath.EndsWith(".url", StringComparison.OrdinalIgnoreCase))
-                    shortcutPath = Path.ChangeExtension(shortcutPath, ".url");
 
-                File.WriteAllText(shortcutPath,
-                    "[InternetShortcut]" + Environment.NewLine +
-                    $"URL=file:///{targetExe.Replace("\\", "/")}" + Environment.NewLine);
+                OOS.Shared.SharedLogger.Info($"Created shortcut: {shortcutPath}");
+            }
+            catch (Exception ex)
+            {
+                OOS.Shared.SharedLogger.Warn($"Failed to create shortcut {shortcutName}: {ex.Message}");
             }
         }
 
+        public static void ValidateShortcuts(string sandboxDir)
+        {
+            var shortcuts = new[]
+            {
+                ("Terminal.lnk", "OOS.Terminal.exe", "Launch the in-game terminal environment"),
+                ("DeviceManager.lnk", "OOS.DeviceManager.exe", "Manage connected (real + simulated) devices")
+            };
+
+            foreach (var (name, exe, desc) in shortcuts)
+            {
+                string shortcutPath = Path.Combine(sandboxDir, name);
+                string exePath = Path.Combine(App.BaseDir, exe);
+
+                bool needsRecreate = !File.Exists(shortcutPath)
+                                     || !File.Exists(exePath)
+                                     || !IsShortcutTargetValid(shortcutPath, exePath);
+
+                if (needsRecreate)
+                    CreateShortcutForApp(sandboxDir, name, exe, desc);
+            }
+        }
+
+        private static bool IsShortcutTargetValid(string shortcutPath, string expectedTarget)
+        {
+            try
+            {
+                var shell = new WshShell();
+                IWshShortcut shortcut = (IWshShortcut)shell.CreateShortcut(shortcutPath);
+                string actualTarget = shortcut.TargetPath ?? string.Empty;
+
+                return string.Equals(
+                    Path.GetFullPath(actualTarget),
+                    Path.GetFullPath(expectedTarget),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

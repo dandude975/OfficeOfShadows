@@ -1,4 +1,6 @@
 ﻿using System;
+using System.IO;
+using System.Text.Json;
 using System.Windows;
 using OOS.Shared;
 
@@ -6,37 +8,53 @@ namespace OOS.Game
 {
     public partial class ResumeWindow : Window
     {
-        public enum Choice { None, Continue, NewGame }
-        public Choice Result { get; private set; } = Choice.None;
+        private readonly string _savePath;
 
-        public ResumeWindow(Progress progress)
+        public ResumeWindow()
         {
             InitializeComponent();
-
-            // Show last checkpoint + local time of last update
-            var local = progress.UpdatedUtc.ToLocalTime();
-            LastSaveText.Text = $"Last checkpoint: {progress.Checkpoint}  •  {local:dd MMM yyyy, HH:mm}";
+            _savePath = System.IO.Path.Combine(App.SandboxRoot, "save.json");
+            LoadSaveData();
         }
 
-        private void ContinueBtn_Click(object sender, RoutedEventArgs e)
+        private void LoadSaveData()
         {
-            Result = Choice.Continue;
+            try
+            {
+                if (!File.Exists(_savePath))
+                {
+                    lblSaveInfo.Text = "No previous save found.";
+                    return;
+                }
+
+                string json = File.ReadAllText(_savePath);
+                var save = JsonSerializer.Deserialize<GameSave>(json);
+
+                lblSaveInfo.Text = $"Last saved: {save.Timestamp}\nLocation: {save.Checkpoint}";
+            }
+            catch (Exception ex)
+            {
+                lblSaveInfo.Text = $"Error loading save: {ex.Message}";
+            }
+        }
+
+        private void ContinueButton_Click(object sender, RoutedEventArgs e)
+        {
+            var video = new VideoWindow("resume.mp4");
+            video.ShowDialog();
             Close();
         }
 
-        private void NewGameBtn_Click(object sender, RoutedEventArgs e)
+        private void NewGameButton_Click(object sender, RoutedEventArgs e)
         {
-            var confirm = MessageBox.Show(
-                "Start a new game? Your current progress will be reset.",
-                "Office of Shadows",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
+            if (File.Exists(_savePath))
+                File.Delete(_savePath);
 
-            if (confirm == MessageBoxResult.Yes)
-            {
-                Result = Choice.NewGame;
-                Close();
-            }
+            var video = new VideoWindow("intro.mp4");
+            video.ShowDialog();
+            Close();
         }
     }
+
+    
 }

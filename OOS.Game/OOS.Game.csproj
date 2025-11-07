@@ -14,6 +14,7 @@
 	</ItemGroup>
 	<ItemGroup>
 	  <None Remove="Assets\excoworker_clip.mp4" />
+	  <None Remove="Assets\Videos\intro.mp4" />
 	</ItemGroup>
 	<ItemGroup>
 	  <COMReference Include="IWshRuntimeLibrary">
@@ -27,10 +28,10 @@
 	  </COMReference>
 	</ItemGroup>
 	<ItemGroup>
-	  <Content Include="Assets\excoworker_clip.mp4">
+	  <Content Include="Assets\manifest.json">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </Content>
-	  <Content Include="Assets\manifest.json">
+	  <Content Include="Assets\Videos\intro.mp4">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </Content>
 	</ItemGroup>
@@ -41,7 +42,18 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\OOS.Shared\OOS.Shared.csproj" />
-	  <ProjectReference Include="..\OOS.Terminal\OOS.Terminal.csproj" />
+		<ProjectReference Include="..\OOS.DeviceManager\OOS.DeviceManager.csproj" ReferenceOutputAssembly="false" />
+		<ProjectReference Include="..\OOS.Shared\OOS.Shared.csproj" />
+		<ProjectReference Include="..\OOS.Terminal\OOS.Terminal.csproj" ReferenceOutputAssembly="false" />
 	</ItemGroup>
+
+	<Target Name="CopyTools" AfterTargets="Build">
+		<ItemGroup>
+			<ToolFiles Include="..\OOS.Terminal\bin\$(Configuration)\net8.0-windows\OOS.Terminal.exe" />
+			<ToolFiles Include="..\OOS.DeviceManager\bin\$(Configuration)\net8.0-windows\OOS.DeviceManager.exe" />
+		</ItemGroup>
+		<Copy SourceFiles="@(ToolFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+	</Target>
+
+
 </Project>
