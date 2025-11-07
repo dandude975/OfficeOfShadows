@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using OOS.Shared;
 
@@ -10,31 +11,33 @@ namespace OOS.Game
         public sealed class Result
         {
             public string ReportPath { get; init; } = "";
-            public int IssueCount { get; init; }
+            public int IssueCount { get; init; }          // -1 = no manifest, -2 = crash
             public bool ManifestFound { get; init; }
         }
 
         /// <summary>
-        /// Validates the sandbox against the manifest; attempts simple repairs; writes a report.
-        /// Returns where the report was written and how many issues were found.
+        /// Validate sandbox against manifest; auto-repair where possible; write a human-readable report.
+        /// Returns the report path and issue count.
         /// </summary>
         public static Result RunStartupCheck(string manifestPath, string sandboxRoot)
         {
-            var reportLines = new List<string>();
-            reportLines.Add($"Office of Shadows – Integrity Check");
-            reportLines.Add($"Manifest: {manifestPath}");
-            reportLines.Add($"Sandbox : {sandboxRoot}");
-            reportLines.Add($"Date    : {DateTime.Now}");
-            reportLines.Add("");
+            var report = new List<string>
+            {
+                "Office of Shadows – Integrity Check",
+                $"Manifest: {manifestPath}",
+                $"Sandbox : {sandboxRoot}",
+                $"Date    : {DateTime.Now}",
+                ""
+            };
 
             try
             {
                 if (!File.Exists(manifestPath))
                 {
-                    reportLines.Add("ERROR: Manifest not found. Skipping validation.");
-                    var path = WriteReport(sandboxRoot, reportLines);
-                    SharedLogger.Info($"Integrity report written (no manifest): {path}");
-                    return new Result { ReportPath = path, IssueCount = -1, ManifestFound = false };
+                    report.Add("ERROR: Manifest not found. Skipping validation.");
+                    var missPath = WriteReport(sandboxRoot, report);
+                    Debug.WriteLine($"Integrity: no manifest; report at {missPath}");
+                    return new Result { ReportPath = missPath, IssueCount = -1, ManifestFound = false };
                 }
 
                 var manifest = SandboxManifest.Load(manifestPath);
@@ -42,111 +45,138 @@ namespace OOS.Game
 
                 if (issues.Count == 0)
                 {
-                    reportLines.Add("All items match the manifest.");
-                    var path = WriteReport(sandboxRoot, reportLines);
-                    SharedLogger.Info($"Integrity report written (no issues): {path}");
-                    return new Result { ReportPath = path, IssueCount = 0, ManifestFound = true };
+                    report.Add("All items match the manifest.");
+                    var okPath = WriteReport(sandboxRoot, report);
+                    Debug.WriteLine($"Integrity: ok; report at {okPath}");
+                    return new Result { ReportPath = okPath, IssueCount = 0, ManifestFound = true };
                 }
 
-                reportLines.Add($"Found {issues.Count} issue(s). Attempting auto-repair where possible…");
-                reportLines.Add("");
+                report.Add($"Found {issues.Count} issue(s). Attempting auto-repair where possible…");
+                report.Add("");
 
                 foreach (var d in issues)
                 {
-                    reportLines.Add($"- {d.Kind}: {d.Item.Path} ({d.Details})");
+                    report.Add($"- {d.Kind}: {d.Item.Path} ({d.Details})");
+
                     try
                     {
                         switch (d.Item.Kind)
                         {
                             case ItemKind.Directory:
-                                if (!Directory.Exists(d.FullPath))
-                                {
-                                    Directory.CreateDirectory(d.FullPath);
-                                    reportLines.Add("  Repaired: Created directory.");
-                                }
+                                EnsureDirectory(d.FullPath, report);
                                 break;
 
                             case ItemKind.Shortcut:
-                                {
-                                    var ok = ShortcutHelper.CreateShortcutForApp(
-                                        sandboxRoot,
-                                        d.Item.Path,               // e.g., "Terminal.lnk"
-                                        AppNameFromShortcut(d.Item.Path), // map link name -> project
-                                        "Office of Shadows tool"
-                                    );
-                                    reportLines.Add(ok
-                                        ? "  Repaired: Recreated shortcut."
-                                        : "  Could not repair: Target EXE not found.");
-                                    break;
-                                }
+                                RepairShortcut(d, sandboxRoot, report);
+                                break;
 
                             case ItemKind.File:
-                                if (!string.IsNullOrWhiteSpace(d.Item.Source))
-                                {
-                                    var src = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, d.Item.Source);
-                                    if (File.Exists(src))
-                                    {
-                                        Directory.CreateDirectory(Path.GetDirectoryName(d.FullPath)!);
-                                        File.Copy(src, d.FullPath, overwrite: true);
-                                        reportLines.Add($"  Repaired: Copied from {d.Item.Source}");
-                                    }
-                                    else
-                                    {
-                                        reportLines.Add($"  Could not repair: Source not found: {src}");
-                                    }
-                                }
-                                else if (string.Equals(Path.GetFileName(d.FullPath), "README.txt", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    File.WriteAllText(d.FullPath, DefaultReadme());
-                                    reportLines.Add("  Repaired: Regenerated README content.");
-                                }
-                                else
-                                {
-                                    reportLines.Add("  No repair source specified.");
-                                }
+                                RepairFile(d, report);
                                 break;
                         }
                     }
                     catch (Exception ex)
                     {
-                        reportLines.Add($"  Repair failed: {ex.Message}");
+                        report.Add($"  Repair failed: {ex.Message}");
                     }
                 }
 
-                var written = WriteReport(sandboxRoot, reportLines);
-                SharedLogger.Info($"Integrity report written (issues {issues.Count}): {written}");
+                var written = WriteReport(sandboxRoot, report);
+                Debug.WriteLine($"Integrity: repaired {issues.Count}; report at {written}");
                 return new Result { ReportPath = written, IssueCount = issues.Count, ManifestFound = true };
             }
             catch (Exception ex)
             {
-                reportLines.Add("");
-                reportLines.Add($"FATAL: {ex.Message}");
-                var written = WriteReport(sandboxRoot, reportLines);
-                SharedLogger.Error($"Integrity check crashed; report at: {written}");
+                report.Add("");
+                report.Add($"FATAL: {ex.Message}");
+                var written = WriteReport(sandboxRoot, report);
+                Debug.WriteLine($"Integrity: crash; report at {written}");
                 return new Result { ReportPath = written, IssueCount = -2, ManifestFound = false };
             }
         }
 
-        private static string AppNameFromShortcut(string linkPath)
+        // ---------- Repairs ----------
+
+        private static void EnsureDirectory(string path, List<string> report)
         {
-            var name = Path.GetFileNameWithoutExtension(linkPath).ToLowerInvariant();
-            return name switch
+            if (!Directory.Exists(path))
             {
-                "terminal" => "OOS.Terminal",
-                "vpn" => "OOS.VPN",
-                "email" => "OOS.Email",
-                _ => "OOS.Terminal" // default
-            };
+                Directory.CreateDirectory(path);
+                report.Add("  Repaired: Created directory.");
+            }
         }
 
+        private static void RepairShortcut(Discrepancy d, string sandboxRoot, List<string> report)
+        {
+            // Try a specific shortcut recreation; if not available, recreate all known shortcuts.
+            var appName = AppNameFromShortcut(d.Item.Path);
+            var ok = false;
+
+            try
+            {
+                ok = ShortcutHelper.CreateShortcutForApp(
+                        sandboxRoot,
+                        d.Item.Path,                // e.g., "Terminal.lnk"
+                        appName,                    // e.g., "OOS.Terminal"
+                        "Office of Shadows tool");
+            }
+            catch
+            {
+                // ignore and try bulk creation
+            }
+
+            if (!ok)
+            {
+                try
+                {
+                    ShortcutHelper.CreateShortcutsIfMissing(sandboxRoot);
+                    // confirm creation
+                    ok = File.Exists(Path.Combine(sandboxRoot, d.Item.Path));
+                }
+                catch { /* ignore */ }
+            }
+
+            report.Add(ok
+                ? "  Repaired: Recreated shortcut."
+                : "  Could not repair: Target EXE not found.");
+        }
+
+        private static void RepairFile(Discrepancy d, List<string> report)
+        {
+            // If the manifest provides a source asset, copy it safely.
+            if (!string.IsNullOrWhiteSpace(d.Item.Source))
+            {
+                var src = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, d.Item.Source);
+                if (File.Exists(src))
+                {
+                    SafetyManager.SafeCopy(src, d.FullPath);
+                    report.Add($"  Repaired: Copied from {d.Item.Source}");
+                    return;
+                }
+
+                report.Add($"  Could not repair: Source not found: {src}");
+                return;
+            }
+
+            // Special-case README (regenerate text if missing/corrupt and no source provided).
+            if (string.Equals(Path.GetFileName(d.FullPath), "README.txt", StringComparison.OrdinalIgnoreCase))
+            {
+                SafetyManager.SafeWriteText(d.FullPath, DefaultReadme());
+                report.Add("  Repaired: Regenerated README content.");
+                return;
+            }
+
+            report.Add("  No repair source specified.");
+        }
+
+        // ---------- Helpers ----------
 
         /// <summary>
-        /// Prefer writing to EXE\FileValidation. If that fails, fall back to sandbox.
-        /// Returns the path actually written.
+        /// Primary: write to EXE\FileValidation; fallback: sandbox\_integrity_report.txt.
+        /// Returns actual path written.
         /// </summary>
         private static string WriteReport(string sandboxRoot, List<string> lines)
         {
-            // primary location: alongside game exe
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
             var outDir = Path.Combine(baseDir, "FileValidation");
             var file = Path.Combine(outDir, $"integrity_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
@@ -159,7 +189,6 @@ namespace OOS.Game
             }
             catch
             {
-                // fallback: sandbox
                 try
                 {
                     var fallback = Path.Combine(sandboxRoot, "_integrity_report.txt");
@@ -168,9 +197,21 @@ namespace OOS.Game
                 }
                 catch
                 {
-                    return ""; // ultimate fallback: nothing we can do
+                    return "";
                 }
             }
+        }
+
+        private static string AppNameFromShortcut(string linkPath)
+        {
+            var name = Path.GetFileNameWithoutExtension(linkPath).ToLowerInvariant();
+            return name switch
+            {
+                "terminal" => "OOS.Terminal",
+                "vpn" => "OOS.VPN",
+                "email" => "OOS.Email",
+                _ => "OOS.Terminal"
+            };
         }
 
         private static string DefaultReadme() =>
