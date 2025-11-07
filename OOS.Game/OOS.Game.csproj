@@ -7,6 +7,12 @@
 		<Nullable>enable</Nullable>
 	</PropertyGroup>
 	<ItemGroup>
+	  <Compile Remove="FileValidation\**" />
+	  <EmbeddedResource Remove="FileValidation\**" />
+	  <None Remove="FileValidation\**" />
+	  <Page Remove="FileValidation\**" />
+	</ItemGroup>
+	<ItemGroup>
 	  <None Remove="Assets\excoworker_clip.mp4" />
 	</ItemGroup>
 	<ItemGroup>
@@ -37,9 +43,5 @@
 	<ItemGroup>
 	  <ProjectReference Include="..\OOS.Shared\OOS.Shared.csproj" />
 	  <ProjectReference Include="..\OOS.Terminal\OOS.Terminal.csproj" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <Folder Include="FileValidation\" />
 	</ItemGroup>
 </Project>
