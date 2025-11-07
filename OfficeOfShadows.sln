@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OOS.Terminal", "OOS.Termina
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OOS.Game", "OOS.Game\OOS.Game.csproj", "{9887A17D-2603-0EE2-32BA-F21F3C852CCD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OOS.Shared", "OOS.Shared\OOS.Shared.csproj", "{9D540ED3-CC26-4095-917C-F8B933274FF3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{9887A17D-2603-0EE2-32BA-F21F3C852CCD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9887A17D-2603-0EE2-32BA-F21F3C852CCD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9887A17D-2603-0EE2-32BA-F21F3C852CCD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9D540ED3-CC26-4095-917C-F8B933274FF3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9D540ED3-CC26-4095-917C-F8B933274FF3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9D540ED3-CC26-4095-917C-F8B933274FF3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9D540ED3-CC26-4095-917C-F8B933274FF3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
