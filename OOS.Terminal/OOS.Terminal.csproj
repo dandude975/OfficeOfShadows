@@ -8,4 +8,12 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Remove="Resources\cmd.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\cmd.ico" />
+  </ItemGroup>
+
 </Project>

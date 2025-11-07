@@ -1,96 +1,106 @@
 ﻿using System;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
+using System.Linq;
+
+// If you use COM shortcuts, ensure you have a COM reference:
+// Project > Add Reference > COM > "Windows Script Host Object Model"
+// and: using IWshRuntimeLibrary;
 
 namespace OOS.Game
 {
-    public static class ShortcutHelper
+    internal static class ShortcutHelper
     {
-        public static void CreateShortcutsIfMissing(string targetFolder)
+        public static void CreateShortcutsIfMissing(string sandboxRoot)
         {
-            var gameBase = AppDomain.CurrentDomain.BaseDirectory;
-
-            // EXAMPLES — point these at your built exes (dist or debug)
-            var terminalExe = Path.GetFullPath(
-                Path.Combine(gameBase, @"..\..\OOS.Terminal\bin\Debug\net8.0-windows\OOS.Terminal.exe"));
-
-            TryCreateShortcut(targetFolder, "Terminal", terminalExe);
-            // Add more:
-            // var vpnExe = ...
-            // TryCreateShortcut(targetFolder, "VPN", vpnExe);
+            CreateShortcutForApp(sandboxRoot, "Terminal.lnk", "OOS.Terminal", "Office of Shadows - Terminal");
+            CreateShortcutForApp(sandboxRoot, "VPN.lnk", "OOS.VPN", "Office of Shadows - VPN");
+            CreateShortcutForApp(sandboxRoot, "Email.lnk", "OOS.Email", "Office of Shadows - Email");
         }
 
-        private static void TryCreateShortcut(string folder, string name, string exePath)
+        public static bool CreateShortcutForApp(string folder, string linkName, string exeProjectName, string description)
         {
-            if (!File.Exists(exePath)) return;
+            var target = ResolveExe(exeProjectName);
+            var linkPath = Path.Combine(folder, linkName);
+
+            if (target == null || !File.Exists(target))
+            {
+                // Could log here if you have SharedLogger available in Game
+                return false;
+            }
 
             Directory.CreateDirectory(folder);
-            var linkPath = Path.Combine(folder, $"{name}.lnk");
-            if (File.Exists(linkPath)) return;
-
-            CreateShellLink(linkPath,
-                            exePath,
-                            Path.GetDirectoryName(exePath)!,
-                            "",                   // args
-                            $"Open {name}",       // description
-                            exePath, 0);          // icon (path,index)
+            CreateLnk(linkPath, target, Path.GetDirectoryName(target)!, description);
+            return File.Exists(linkPath);
         }
 
-        // ---------- Shell Link COM interop (no external references) ----------
-
-        [ComImport]
-        [Guid("00021401-0000-0000-C000-000000000046")]
-        private class ShellLink { }
-
-        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        [Guid("000214F9-0000-0000-C000-000000000046")]
-        private interface IShellLinkW
+        private static string? ResolveExe(string exeProjectName)
         {
-            void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszFile, int cch, IntPtr pfd, uint fFlags);
-            void GetIDList(out IntPtr ppidl);
-            void SetIDList(IntPtr pidl);
-            void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszName, int cch);
-            void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
-            void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszDir, int cch);
-            void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
-            void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszArgs, int cch);
-            void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
-            void GetHotkey(out short pwHotkey);
-            void SetHotkey(short wHotkey);
-            void GetShowCmd(out int piShowCmd);
-            void SetShowCmd(int iShowCmd);
-            void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszIconPath, int cch, out int piIcon);
-            void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
-            void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
-            void Resolve(IntPtr hwnd, uint fFlags);
-            void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var exeName = exeProjectName + ".exe";
+
+            // 1) Same folder as the game (publish scenario)
+            var sameDir = Path.Combine(baseDir, exeName);
+            if (File.Exists(sameDir)) return sameDir;
+
+            // 2) Dev: search sibling project bin folders relative to the Game bin folder
+            // Walk up to solution root (heuristic: up to 5 parents)
+            var dir = new DirectoryInfo(baseDir);
+            for (int i = 0; i < 5 && dir?.Parent != null; i++) dir = dir.Parent; // up from ...\OOS.Game\bin\Debug\net8.0-windows
+
+            if (dir != null && dir.Exists)
+            {
+                // Typical path: [solution]\OOS.Terminal\bin\Debug\[tfm]\OOS.Terminal.exe
+                var projectDir = new DirectoryInfo(Path.Combine(dir.FullName, exeProjectName));
+                if (projectDir.Exists)
+                {
+                    var binDir = new DirectoryInfo(Path.Combine(projectDir.FullName, "bin"));
+                    if (binDir.Exists)
+                    {
+                        // Prefer current config (Debug/Release) if we can detect it
+                        var candidates = binDir.EnumerateDirectories("*", SearchOption.AllDirectories)
+                                               .SelectMany(d => d.EnumerateFiles(exeName, SearchOption.TopDirectoryOnly))
+                                               .OrderByDescending(f => f.LastWriteTimeUtc)
+                                               .ToList();
+                        var hit = candidates.FirstOrDefault();
+                        if (hit != null) return hit.FullName;
+                    }
+                }
+            }
+
+            return null;
         }
 
-        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        [Guid("0000010b-0000-0000-C000-000000000046")]
-        private interface IPersistFile
+        private static void CreateLnk(string shortcutPath, string targetExe, string workingDir, string description)
         {
-            void GetClassID(out Guid pClassID);
-            [PreserveSig] int IsDirty();
-            void Load([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, uint dwMode);
-            void Save([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, bool fRemember);
-            void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string pszFileName);
-            void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string ppszFileName);
+            try
+            {
+                var shell = new IWshRuntimeLibrary.WshShell();
+                var shortcut = (IWshRuntimeLibrary.IWshShortcut)shell.CreateShortcut(shortcutPath);
+                shortcut.TargetPath = targetExe;
+                shortcut.WorkingDirectory = workingDir;
+                shortcut.Description = description;
+
+                // Use the real Command Prompt icon
+                var systemRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+                var cmdIcon = Path.Combine(systemRoot, "System32", "cmd.exe");
+                shortcut.IconLocation = $"{cmdIcon},0";
+
+                // (Optional) open Terminal in your sandbox folder by default
+                // shortcut.WorkingDirectory = OOS.Shared.SharedPaths.DesktopSandbox;
+
+                shortcut.Save();
+            }
+            catch
+            {
+                // .url fallback kept if you want, but it won't carry a custom icon.
+                if (!shortcutPath.EndsWith(".url", StringComparison.OrdinalIgnoreCase))
+                    shortcutPath = Path.ChangeExtension(shortcutPath, ".url");
+
+                File.WriteAllText(shortcutPath,
+                    "[InternetShortcut]" + Environment.NewLine +
+                    $"URL=file:///{targetExe.Replace("\\", "/")}" + Environment.NewLine);
+            }
         }
 
-        private static void CreateShellLink(string linkPath, string targetPath, string workingDir,
-                                            string arguments, string description, string iconPath, int iconIndex = 0)
-        {
-            var link = (IShellLinkW)new ShellLink();
-            link.SetPath(targetPath);
-            link.SetWorkingDirectory(workingDir);
-            if (!string.IsNullOrEmpty(arguments)) link.SetArguments(arguments);
-            if (!string.IsNullOrEmpty(description)) link.SetDescription(description);
-            if (!string.IsNullOrEmpty(iconPath)) link.SetIconLocation(iconPath, iconIndex);
-
-            var file = (IPersistFile)link;
-            file.Save(linkPath, true);
-        }
     }
 }

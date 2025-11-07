@@ -12,7 +12,6 @@ namespace OOS.Game
             {
                 Progress.Checkpoint = id;
                 Progress.Save();
-                SharedLogger.Info($"Checkpoint → {id}");
             }
         }
 
@@ -22,6 +21,12 @@ namespace OOS.Game
         {
             Progress.Flags[key] = value;
             Progress.Save();
+        }
+
+        public void ResetProgress()
+        {
+            Progress.Reset();
+            Progress = Progress.Load(); // back to "intro"
         }
     }
 }
