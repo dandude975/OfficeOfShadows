@@ -1,181 +1,153 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Forms;
-using OOS.Shared;
 
 namespace OOS.Game
 {
-    internal class EventEngine
+    /// <summary>
+    /// Persistent background engine that simulates real-time in-game events.
+    /// Runs silently after startup to monitor and trigger story or environmental changes.
+    /// </summary>
+    public class EventEngine
     {
-        private FileSystemWatcher? _watcher;
-        private readonly StoryController _story;
-        private readonly List<TimelineItem> _timeline;
+        private CancellationTokenSource _cts;
+        private readonly string _sandboxPath;
+        private readonly string _logPath;
+        private readonly Random _rng = new();
 
-        // Singleton pattern so other classes can easily call EventEngine.Instance
-        private static EventEngine? _instance;
-        public static EventEngine Instance => _instance ??= new EventEngine();
-
-        private EventEngine()
+        /// <summary>
+        /// Creates a new EventEngine instance.
+        /// </summary>
+        public EventEngine()
         {
-            _story = new StoryController();
-            _timeline = Timeline.LoadOrEmpty();
+            _sandboxPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                "Office Work Stuff");
+
+            _logPath = Path.Combine(
+                AppContext.BaseDirectory,
+                "FileValidation",
+                "event_engine.log");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
         }
 
         /// <summary>
-        /// Starts the Event Engine and begins watching for incoming messages.
+        /// Starts the event engine loop asynchronously.
         /// </summary>
         public void Start()
         {
-            SharedLogger.Info("EventEngine started.");
-            _watcher = FileQueue.CreateWatcher(OnMessage);
+            if (_cts != null)
+                return; // already running
 
-            // Optionally trigger startup events (like checkpoint resume)
-            if (_story.AtLeast("tools_opened"))
+            _cts = new CancellationTokenSource();
+            var token = _cts.Token;
+
+            Log("[EventEngine] Started background system.");
+
+            Task.Run(async () =>
             {
-                SharedLogger.Info("Resuming from checkpoint: tools_opened");
-            }
-        }
-
-        /// <summary>
-        /// Handles any GameMessage posted from other applications.
-        /// </summary>
-        private void OnMessage(GameMessage msg)
-        {
-            try
-            {
-                SharedLogger.Info($"Received message: {msg.Type} from {msg.From}");
-
-                switch (msg.Type)
+                try
                 {
-                    // Example: terminal usage
-                    case "terminal.command":
-                        _story.Flag("used_terminal");
-                        break;
-
-                    // Example: user connected to VPN
-                    case "vpn.connected":
-                        _story.Flag("vpn_connected");
-                        break;
-
-                    // Example: email opened
-                    case "email.read":
-                        _story.Flag("email_read");
-                        break;
-
-                    // Example: fake file opened
-                    case "file.opened":
-                        HandleFileOpened(msg);
-                        break;
-                }
-
-                // After processing, check if this message triggers a timeline action
-                ProcessTimeline(msg);
-            }
-            catch (Exception ex)
-            {
-                SharedLogger.Error($"EventEngine error: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// React to a file being opened inside the sandbox folder.
-        /// </summary>
-        private void HandleFileOpened(GameMessage msg)
-        {
-            try
-            {
-                if (msg.Data is null) return;
-                var dataJson = System.Text.Json.JsonSerializer.Serialize(msg.Data);
-                SharedLogger.Info($"File opened data: {dataJson}");
-
-                // You could add logic here for specific filenames triggering events.
-                // Example: if user opens "credentials.txt", mark flag or spawn popup
-            }
-            catch (Exception ex)
-            {
-                SharedLogger.Error($"HandleFileOpened() failed: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Executes any timeline events that match the incoming message.
-        /// </summary>
-        private void ProcessTimeline(GameMessage msg)
-        {
-            foreach (var item in _timeline)
-            {
-                if (item.OnType == msg.Type)
-                {
-                    SharedLogger.Info($"Timeline triggered: {item.Id}");
-                    foreach (var act in item.Do)
+                    while (!token.IsCancellationRequested)
                     {
-                        ExecuteTimelineAction(act);
+                        // Poll every 5–10 seconds (random to feel organic)
+                        await Task.Delay(TimeSpan.FromSeconds(_rng.Next(5, 11)), token);
+
+                        // Placeholder background logic:
+                        // Check sandbox integrity, simulate network events, etc.
+                        RunBackgroundCheck();
+
+                        // Occasionally trigger fake in-game "system messages"
+                        if (_rng.NextDouble() < 0.2) // 20% chance
+                            TriggerSystemEvent();
                     }
                 }
+                catch (TaskCanceledException)
+                {
+                    Log("[EventEngine] Gracefully stopped (task canceled).");
+                }
+                catch (Exception ex)
+                {
+                    Log($"[EventEngine] ERROR: {ex.Message}");
+                }
+            }, token);
+        }
+
+        /// <summary>
+        /// Stops the event engine safely.
+        /// </summary>
+        public void Stop()
+        {
+            try
+            {
+                _cts?.Cancel();
+                _cts = null;
+                Log("[EventEngine] Stopped background system.");
+            }
+            catch (Exception ex)
+            {
+                Log($"[EventEngine] Stop error: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Executes a specific timeline action (e.g., popup, sound, file drop, etc.)
+        /// Simple placeholder that checks sandbox for missing or new files.
         /// </summary>
-        private void ExecuteTimelineAction(TimelineAction action)
+        private void RunBackgroundCheck()
         {
             try
             {
-                switch (action.Act)
+                if (!Directory.Exists(_sandboxPath))
+                    return;
+
+                var files = Directory.GetFiles(_sandboxPath);
+                if (files.Length == 0)
                 {
-                    case "show_toast":
-                        var text = action.Args != null && action.Args.ContainsKey("text")
-                            ? action.Args["text"]
-                            : "Unknown event occurred.";
-                        ShowToast(text);
-                        break;
-
-                    case "drop_file":
-                        if (action.Args != null && action.Args.TryGetValue("name", out string? fileName))
-                        {
-                            var filePath = Path.Combine(SharedPaths.DesktopSandbox, fileName);
-                            File.WriteAllText(filePath, action.Args.GetValueOrDefault("content", "No content."));
-                            SharedLogger.Info($"Dropped file: {filePath}");
-                        }
-                        break;
-
-                    case "checkpoint":
-                        if (action.Args != null && action.Args.TryGetValue("id", out string? id))
-                        {
-                            _story.SetCheckpoint(id);
-                        }
-                        break;
-
-                    default:
-                        SharedLogger.Warn($"Unknown timeline action: {action.Act}");
-                        break;
+                    Log("[Sandbox Monitor] No files detected in workspace.");
+                }
+                else
+                {
+                    Log($"[Sandbox Monitor] {files.Length} items currently in workspace.");
                 }
             }
             catch (Exception ex)
             {
-                SharedLogger.Error($"ExecuteTimelineAction() failed: {ex.Message}");
+                Log($"[Sandbox Monitor] Error: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Shows a Windows-style toast message.
+        /// Placeholder to trigger fake “system” events for later expansion.
         /// </summary>
-        private void ShowToast(string message)
+        private void TriggerSystemEvent()
+        {
+            string[] fakeMessages =
+            {
+                "Background sync complete.",
+                "Network latency spike detected.",
+                "VPN handshake refreshed.",
+                "Unauthorized script attempt logged.",
+                "File validation daemon restarted."
+            };
+
+            string message = fakeMessages[_rng.Next(fakeMessages.Length)];
+            Log($"[System Event] {message}");
+        }
+
+        /// <summary>
+        /// Logs background messages to a file in /FileValidation for debugging or narrative trace.
+        /// </summary>
+        private void Log(string message)
         {
             try
             {
-                Task.Run(() =>
-                {
-                    MessageBox.Show(message, "Office of Shadows", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                });
+                string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
+                File.AppendAllText(_logPath, line + Environment.NewLine);
+                Console.WriteLine(line); // visible in debug output
             }
-            catch (Exception ex)
-            {
-                SharedLogger.Error($"ShowToast() failed: {ex.Message}");
-            }
+            catch { /* ignore logging errors */ }
         }
     }
 }

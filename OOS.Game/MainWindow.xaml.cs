@@ -11,19 +11,8 @@ namespace OOS.Game
 
         private void OpenTerminal_Click(object sender, RoutedEventArgs e)
         {
-            var exe = System.IO.Path.Combine(App.BaseDir, "OOS.Terminal.exe");
-            if (System.IO.File.Exists(exe))
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe)
-                {
-                    UseShellExecute = true
-                });
-            }
-            else
-            {
-                OOS.Shared.SharedLogger.Warn("Terminal EXE not found.");
-            }
+            // Launch the terminal app (shortcut exists in the sandbox; this opens the EXE directly)
+            BackgroundManager.LaunchTool("OOS.Terminal.exe");
         }
-
     }
 }

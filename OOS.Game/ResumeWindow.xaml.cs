@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Text.Json;
 using System.Windows;
 using OOS.Shared;
 
@@ -13,48 +12,41 @@ namespace OOS.Game
         public ResumeWindow()
         {
             InitializeComponent();
-            _savePath = System.IO.Path.Combine(App.SandboxRoot, "save.json");
-            LoadSaveData();
-        }
+            _savePath = Path.Combine(AppPaths.SaveDir, "save.json");
 
-        private void LoadSaveData()
-        {
-            try
+            if (File.Exists(_savePath))
             {
-                if (!File.Exists(_savePath))
-                {
-                    lblSaveInfo.Text = "No previous save found.";
-                    return;
-                }
+                var save = GameSave.Load(_savePath);
+                lblSaveInfo.Text = $"{save.Checkpoint} — {save.TimestampUtc.ToLocalTime():g}";
 
-                string json = File.ReadAllText(_savePath);
-                var save = JsonSerializer.Deserialize<GameSave>(json);
 
-                lblSaveInfo.Text = $"Last saved: {save.Timestamp}\nLocation: {save.Checkpoint}";
             }
-            catch (Exception ex)
+            else
             {
-                lblSaveInfo.Text = $"Error loading save: {ex.Message}";
+                lblSaveInfo.Text = "No save found.";
             }
         }
 
-        private void ContinueButton_Click(object sender, RoutedEventArgs e)
+        private void ContinueBtn_Click(object sender, RoutedEventArgs e)
         {
+            // Play the resume clip (or jump right into desktop if you prefer)
             var video = new VideoWindow("resume.mp4");
             video.ShowDialog();
             Close();
         }
 
-        private void NewGameButton_Click(object sender, RoutedEventArgs e)
+        private void NewGameBtn_Click(object sender, RoutedEventArgs e)
         {
-            if (File.Exists(_savePath))
-                File.Delete(_savePath);
+            try
+            {
+                if (File.Exists(_savePath))
+                    File.Delete(_savePath);
+            }
+            catch { /* ignore */ }
 
             var video = new VideoWindow("intro.mp4");
             video.ShowDialog();
             Close();
         }
     }
-
-    
 }

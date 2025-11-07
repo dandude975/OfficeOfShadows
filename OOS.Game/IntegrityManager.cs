@@ -1,151 +1,189 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
+using System.Text;
 using System.Text.Json;
-using System.Collections.Generic;
 using OOS.Shared;
 
 namespace OOS.Game
 {
-    public static class IntegrityManager
+    internal static class IntegrityManager
     {
-        public static string ValidateAndRepair(string manifestPath, string sandboxRoot)
+        // manifest model
+        private sealed class ManifestFile
         {
+            public ManifestItem[] Items { get; set; } = Array.Empty<ManifestItem>();
+        }
+
+        private sealed class ManifestItem
+        {
+            // "dir" | "file" | "lnk"
+            public string Kind { get; set; } = "";
+            // relative path inside sandbox, e.g. "Notes" or "Terminal.lnk"
+            public string Path { get; set; } = "";
+            // for lnk/file: optional source or target exe name, e.g. "OOS.Terminal.exe"
+            public string? Target { get; set; }
+            // for file copy from assets: optional asset relative path
+            public string? Asset { get; set; }
+        }
+
+        /// <summary>
+        /// Validates the sandbox content against the manifest and auto-repairs where possible.
+        /// Returns the full path to the report file (written in reportDir).
+        /// </summary>
+        public static string ValidateAndRepair(string manifestPath, string sandboxDir, string reportDir)
+        {
+            Directory.CreateDirectory(reportDir);
+
+            var reportPath = Path.Combine(reportDir, $"integrity_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+            var sb = new StringBuilder();
+
+            sb.AppendLine("Office of Shadows – Integrity Check");
+            sb.AppendLine($"Manifest : {manifestPath}");
+            sb.AppendLine($"Sandbox  : {sandboxDir}");
+            sb.AppendLine($"Date     : {DateTime.Now:dd/MM/yyyy HH:mm:ss}");
+            sb.AppendLine();
+
+            ManifestFile? manifest = null;
             try
             {
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string reportPath = Path.Combine(sandboxRoot, $"integrity_{timestamp}.txt");
-
-                using var writer = new StreamWriter(reportPath, false);
-                writer.WriteLine("Office of Shadows – Integrity Check");
-                writer.WriteLine($"Manifest : {manifestPath}");
-                writer.WriteLine($"Sandbox  : {sandboxRoot}");
-                writer.WriteLine($"Date     : {DateTime.Now}\n");
-
                 if (!File.Exists(manifestPath))
                 {
-                    writer.WriteLine("FATAL: Manifest file not found!");
-                    SharedLogger.Warn($"Manifest file missing: {manifestPath}");
+                    sb.AppendLine("FATAL: manifest not found.");
+                    File.WriteAllText(reportPath, sb.ToString());
                     return reportPath;
                 }
 
-                SandboxManifest manifest;
+                var json = File.ReadAllText(manifestPath);
+                manifest = JsonSerializer.Deserialize<ManifestFile>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (manifest?.Items == null)
+                {
+                    sb.AppendLine("FATAL: could not deserialize manifest.");
+                    File.WriteAllText(reportPath, sb.ToString());
+                    return reportPath;
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"FATAL: Exception reading manifest: {ex.Message}");
+                File.WriteAllText(reportPath, sb.ToString());
+                return reportPath;
+            }
+
+            var issues = 0;
+
+            foreach (var item in manifest.Items)
+            {
                 try
                 {
-                    string json = File.ReadAllText(manifestPath);
-                    manifest = JsonSerializer.Deserialize<SandboxManifest>(json);
+                    var targetPath = Path.Combine(sandboxDir, item.Path);
+
+                    switch ((item.Kind ?? "").ToLowerInvariant())
+                    {
+                        case "dir":
+                            if (!Directory.Exists(targetPath))
+                            {
+                                Directory.CreateDirectory(targetPath);
+                                sb.AppendLine($"- Missing: {item.Path} (dir)");
+                                sb.AppendLine("  Repaired: Created directory.");
+                                issues++;
+                            }
+                            break;
+
+                        case "file":
+                            {
+                                if (!File.Exists(targetPath))
+                                {
+                                    sb.AppendLine($"- Missing: {item.Path} (file)");
+                                    // copy from assets if provided
+                                    if (!string.IsNullOrWhiteSpace(item.Asset))
+                                    {
+                                        var src = AppPaths.GetAssetPath(item.Asset);
+                                        if (File.Exists(src))
+                                        {
+                                            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+                                            File.Copy(src, targetPath, overwrite: true);
+                                            sb.AppendLine("  Repaired: Copied from assets.");
+                                            issues++;
+                                        }
+                                        else
+                                        {
+                                            sb.AppendLine("  Could not repair: asset missing.");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        sb.AppendLine("  Could not repair: no asset specified.");
+                                    }
+                                }
+                            }
+                            break;
+
+                        case "lnk":
+                            {
+                                if (!File.Exists(targetPath))
+                                {
+                                    sb.AppendLine($"- Missing: {item.Path} (shortcut)");
+                                    var exe = ResolveToolExe(item.Target);
+                                    if (exe != null)
+                                    {
+                                        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+                                        ShortcutHelper.CreateShortcutForApp(exe, targetPath);
+                                        sb.AppendLine("  Repaired: Recreated shortcut.");
+                                        issues++;
+                                    }
+                                    else
+                                    {
+                                        sb.AppendLine("  Could not repair: target EXE not found.");
+                                    }
+                                }
+                            }
+                            break;
+
+                        default:
+                            sb.AppendLine($"WARN: Unknown item kind '{item.Kind}' for '{item.Path}'.");
+                            break;
+                    }
                 }
                 catch (Exception ex)
                 {
-                    writer.WriteLine($"FATAL: The JSON value could not be converted.\nError: {ex.Message}");
-                    SharedLogger.Warn($"Invalid manifest JSON: {ex.Message}");
-                    return reportPath;
+                    sb.AppendLine($"ERROR processing '{item.Path}': {ex.Message}");
                 }
-
-                var discrepancies = manifest.Validate(sandboxRoot);
-
-                if (discrepancies.Count == 0)
-                {
-                    writer.WriteLine("All files verified successfully. No issues found.");
-                }
-                else
-                {
-                    writer.WriteLine($"Found {discrepancies.Count} issue(s). Attempting auto-repair where possible…\n");
-
-                    foreach (var item in discrepancies)
-                    {
-                        writer.WriteLine($"- Missing: {item.Name}");
-                        bool repaired = TryRepair(item, sandboxRoot, writer);
-
-                        writer.WriteLine(repaired
-                            ? "  Successfully repaired.\n"
-                            : "  Could not repair: Target EXE not found.\n");
-                    }
-                }
-
-                writer.Flush();
-                SharedLogger.Info($"Integrity check completed. Report: {reportPath}");
-                return reportPath;
             }
-            catch (Exception ex)
+
+            if (issues == 0)
             {
-                SharedLogger.Warn($"Integrity check failed: {ex.Message}");
-                return null;
+                sb.AppendLine("No issues found.");
             }
+            else
+            {
+                sb.AppendLine();
+                sb.AppendLine($"Found {issues} issue(s).");
+            }
+
+            File.WriteAllText(reportPath, sb.ToString());
+            return reportPath;
         }
 
-        private static bool TryRepair(ManifestItem item, string sandboxRoot, StreamWriter writer)
+        private static string? ResolveToolExe(string? targetName)
         {
-            try
-            {
-                string targetPath = Path.Combine(sandboxRoot, item.Name);
+            if (string.IsNullOrWhiteSpace(targetName)) return null;
 
-                switch (item.Kind)
-                {
-                    case ItemKind.Directory:
-                        Directory.CreateDirectory(targetPath);
-                        writer.WriteLine("  Repaired: Created directory.");
-                        return true;
+            // packaged: next to game exe
+            var nearGame = Path.Combine(AppPaths.BaseDir, targetName);
 
-                    case ItemKind.Shortcut:
-                        ShortcutHelper.CreateShortcutForApp(
-                            sandboxRoot,
-                            item.Name,
-                            item.TargetExe,
-                            item.Description ?? "In-game shortcut");
-                        writer.WriteLine("  Repaired: Recreated shortcut.");
-                        return true;
+            // dev fallback: sibling project's debug bin
+            var sibling = Path.GetFullPath(Path.Combine(
+                AppPaths.BaseDir, "..", "..", "..",
+                Path.GetFileNameWithoutExtension(targetName)!, "bin", "Debug", "net8.0-windows", targetName));
 
-                    case ItemKind.File:
-                        File.WriteAllText(targetPath, item.ExpectedContent ?? "");
-                        writer.WriteLine("  Repaired: Recreated placeholder file.");
-                        return true;
-
-                    default:
-                        writer.WriteLine("  Skipped: Unsupported item type.");
-                        return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                writer.WriteLine($"  Repair failed: {ex.Message}");
-                return false;
-            }
-        }
-    }
-
-    // Minimal manifest definitions
-    public enum ItemKind { File, Directory, Shortcut }
-
-    public class ManifestItem
-    {
-        public string Name { get; set; }
-        public ItemKind Kind { get; set; }
-        public string TargetExe { get; set; }
-        public string Description { get; set; }
-        public string ExpectedContent { get; set; }
-    }
-
-    public class SandboxManifest
-    {
-        public List<ManifestItem> Items { get; set; } = new();
-
-        public List<ManifestItem> Validate(string sandboxRoot)
-        {
-            var missing = new List<ManifestItem>();
-            foreach (var item in Items)
-            {
-                string path = Path.Combine(sandboxRoot, item.Name);
-
-                bool exists = item.Kind switch
-                {
-                    ItemKind.Directory => Directory.Exists(path),
-                    _ => File.Exists(path)
-                };
-
-                if (!exists)
-                    missing.Add(item);
-            }
-            return missing;
+            if (File.Exists(nearGame)) return nearGame;
+            if (File.Exists(sibling)) return sibling;
+            return null;
         }
     }
 }

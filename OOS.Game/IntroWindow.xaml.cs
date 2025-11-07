@@ -23,6 +23,8 @@ namespace OOS.Game
                 SavedLeft = this.Left;
                 SavedTop = this.Top;
 
+                DialogResult = true; // ensures app continues to 
+
                 UserConsented = true;
                 Close();
             }
@@ -31,5 +33,7 @@ namespace OOS.Game
                 MessageBox.Show("Please confirm you understand before continuing.", "Office of Shadows");
             }
         }
+
+        
     }
 }

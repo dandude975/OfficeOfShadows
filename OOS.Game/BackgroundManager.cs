@@ -1,118 +1,131 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
-using System.Timers;
+using System.Threading.Tasks;
 using System.Windows;
+using Forms = System.Windows.Forms;
+using OOS.Shared;
 
 namespace OOS.Game
 {
-    public sealed class BackgroundManager
+    internal sealed class BackgroundManager
     {
-        public static BackgroundManager Instance { get; } = new BackgroundManager();
+        private static readonly Lazy<BackgroundManager> _lazy = new(() => new BackgroundManager());
+        public static BackgroundManager Instance => _lazy.Value;
 
-        private System.Timers.Timer? _timer;
-        private readonly List<Action> _events = new();
-        private int _idx;
-        private readonly string _sandbox = SandboxHelper.EnsureSandboxFolder();
+        private Forms.NotifyIcon? _tray;
+        private bool _running;
 
         private BackgroundManager() { }
 
         public void Start()
         {
-            // Schedule some example events (replace with your own / JSON-driven)
-            _events.Add(() => DropFile("we_are_watching.txt", "we are watching you."));
-            _events.Add(() => ShowMessage("Incoming message", "Check the folder..."));
-            _events.Add(() => ShowTerminalPopup());
-
-            _timer = new Timer(30_000); // every 30s
-            _timer.Elapsed += (s, e) => Application.Current.Dispatcher.Invoke(RunNextEvent);
-            _timer.Start();
+            if (_running) return;
+            _running = true;
+            CreateTrayIcon();
+            SharedLogger.Info("BackgroundManager started.");
         }
 
         public void Stop()
         {
-            _timer?.Stop();
-            _timer?.Dispose();
-            _timer = null;
+            if (!_running) return;
+            try { _tray?.Dispose(); } catch { }
+            _tray = null;
+            _running = false;
+            SharedLogger.Info("BackgroundManager stopped.");
         }
 
-        private void RunNextEvent()
+        private void CreateTrayIcon()
         {
-            if (_events.Count == 0) return;
-            var action = _events[_idx % _events.Count];
-            _idx++;
-            action();
-        }
-
-        public void ResetEverything()
-        {
-            Stop();
-            try
+            _tray = new Forms.NotifyIcon
             {
-                if (Directory.Exists(_sandbox))
-                {
-                    Directory.Delete(_sandbox, true);
-                    Directory.CreateDirectory(_sandbox);
-                }
-            }
-            catch { /* ignore */ }
-            Start();
+                Icon = System.Drawing.SystemIcons.Application,
+                Visible = true,
+                Text = "Office of Shadows (running)"
+            };
+
+            var menu = new Forms.ContextMenuStrip();
+
+            menu.Items.Add(new Forms.ToolStripMenuItem("Open Workspace", null, (_, __) => OpenFolder(AppPaths.SandboxRoot)));
+            menu.Items.Add(new Forms.ToolStripMenuItem("Validate / Repair Files", null, async (_, __) => await RunIntegrityAsync()));
+            menu.Items.Add(new Forms.ToolStripSeparator());
+            menu.Items.Add(new Forms.ToolStripMenuItem("Open Terminal", null, (_, __) => LaunchTool("OOS.Terminal.exe")));
+            menu.Items.Add(new Forms.ToolStripMenuItem("Open Device Manager", null, (_, __) => LaunchTool("OOS.DeviceManager.exe")));
+            menu.Items.Add(new Forms.ToolStripSeparator());
+            menu.Items.Add(new Forms.ToolStripMenuItem("Quit", null, (_, __) => Application.Current.Shutdown()));
+
+            _tray.ContextMenuStrip = menu;
+            _tray.DoubleClick += (_, __) => OpenFolder(AppPaths.SandboxRoot);
         }
 
-        private void DropFile(string name, string content)
-        {
-            var path = Path.Combine(_sandbox, name);
-            File.WriteAllText(path, content);
-        }
-
-        private void ShowMessage(string title, string body)
-        {
-            // For dev simplicity; later swap to Windows toasts (Toolkit) if you want
-            MessageBox.Show(body, title);
-        }
-
-        private static bool LaunchTool(string exeName, params string[] args)
+        private static void OpenFolder(string path)
         {
             try
             {
-                var path = System.IO.Path.Combine(App.BaseDir, exeName);
-                if (!System.IO.File.Exists(path))
-                {
-                    OOS.Shared.SharedLogger.Warn($"Tool not found: {exeName} (looked in {App.BaseDir})");
-                    return false;
-                }
-
-                var psi = new System.Diagnostics.ProcessStartInfo(path)
+                if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+                Process.Start(new ProcessStartInfo("explorer.exe")
                 {
                     UseShellExecute = true,
-                    WorkingDirectory = App.BaseDir
-                };
-
-                // For .NET 8 you can use ArgumentList; with UseShellExecute=true, Args still work.
-                if (args is { Length: > 0 })
-                    psi.Arguments = string.Join(" ", args);
-
-                System.Diagnostics.Process.Start(psi);
-                OOS.Shared.SharedLogger.Info($"Launched tool: {path}");
-                return true;
+                    Arguments = $"\"{path}\""
+                });
             }
             catch (Exception ex)
             {
-                OOS.Shared.SharedLogger.Warn($"Failed to launch tool '{exeName}': {ex.Message}");
-                return false;
+                SharedLogger.Warn($"OpenFolder failed: {ex.Message}");
             }
         }
 
-
-
-        private void ShowTerminalPopup()
+        /// <summary>Public so existing callers (e.g., ToolDeployer/TrayIconManager) can use it.</summary>
+        public static void LaunchTool(string exeName)
         {
             try
             {
-                _ = LaunchTool("OOS.Terminal.exe"); // ignore return, or handle if you want
+                // packaged: next to game exe
+                var nearGame = Path.Combine(AppPaths.BaseDir, exeName);
+
+                // dev fallback: sibling project's debug output
+                var sibling = Path.GetFullPath(Path.Combine(
+                    AppPaths.BaseDir, "..", "..", "..",
+                    Path.GetFileNameWithoutExtension(exeName)!, "bin", "Debug", "net8.0-windows", exeName));
+
+                var target = File.Exists(nearGame) ? nearGame :
+                             File.Exists(sibling) ? sibling : null;
+
+                if (target == null)
+                {
+                    SharedLogger.Warn($"Tool not found: {exeName}");
+                    return;
+                }
+
+                Process.Start(new ProcessStartInfo(target)
+                {
+                    UseShellExecute = true,
+                    WorkingDirectory = Path.GetDirectoryName(target)!
+                });
             }
-            catch { /* no-op; we already log inside LaunchTool */ }
+            catch (Exception ex)
+            {
+                SharedLogger.Warn($"LaunchTool({exeName}) failed: {ex.Message}");
+            }
         }
 
+        public async Task RunIntegrityAsync()
+        {
+            try
+            {
+                Directory.CreateDirectory(AppPaths.IntegrityDir);
+                var report = IntegrityManager.ValidateAndRepair(
+                    AppPaths.ManifestPath,
+                    AppPaths.SandboxRoot,
+                    AppPaths.IntegrityDir);
+
+                SharedLogger.Info($"Integrity check complete. Report: {report}");
+                await Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                SharedLogger.Error($"Integrity run failed: {ex.Message}");
+            }
+        }
     }
 }

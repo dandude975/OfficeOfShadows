@@ -1,21 +1,27 @@
 {
   "items": [
     {
-      "path": "DeviceManager.lnk",
-      "kind": "Shortcut"
-    },
-    {
-      "path": "Terminal.lnk",
-      "kind": "Shortcut"
-    },
-    {
       "path": "Notes",
-      "kind": "Directory"
+      "kind": "dir"
     },
+
     {
       "path": "README.txt",
-      "kind": "File",
+      "kind": "file",
       "source": "README.txt"
+    },
+
+    {
+      "path": "Terminal.lnk",
+      "kind": "shortcut",
+      "targetApp": "OOS.Terminal.exe",
+      "iconPath": "%SystemRoot%\\System32\\cmd.exe"
+    },
+    {
+      "path": "DeviceManager.lnk",
+      "kind": "shortcut",
+      "targetApp": "OOS.DeviceManager.exe",
+      "iconPath": "%SystemRoot%\\System32\\devmgmt.msc"
     }
   ]
 }
